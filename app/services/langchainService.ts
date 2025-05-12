@@ -4,7 +4,7 @@ import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { OpenAIEmbeddings } from 'langchain/embeddings/openai';
 import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { ChatOpenAI } from 'langchain/chat_models/openai';
-import { 
+import {
   ConversationalRetrievalQAChain,
   loadQARefineChain
 } from 'langchain/chains';

@@ -10,34 +10,36 @@ export function usePDFChat(): {
   isInitializing: boolean;
   error: string | null;
   initializeChat: (file: File) => Promise<boolean>;
+  initializeChatForPdf: (fileId: string) => Promise<boolean>;
 } {
-  const [sessionId] = useState<string>(() => uuidv4());
+  const [sessionId, setSessionId] = useState<string>(() => uuidv4());
   const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [isInitializing, setIsInitializing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [currentFileId, setCurrentFileId] = useState<string | null>(null);
 
-  // Initialize the chat service with a PDF file
+  // Initialize the chat service with a PDF file (legacy method)
   const initializeChat = useCallback(async (file: File): Promise<boolean> => {
     setIsInitializing(true);
     setError(null);
-    
+
     try {
       // Create a FormData object to upload the file
       const formData = new FormData();
       formData.append('file', file);
       formData.append('sessionId', sessionId);
-      
+
       // Upload the PDF and initialize the session
       const response = await fetch('/api/chat', {
         method: 'PUT',
         body: formData,
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to initialize chat');
       }
-      
+
       setIsInitialized(true);
       return true;
     } catch (err: any) {
@@ -48,10 +50,54 @@ export function usePDFChat(): {
     }
   }, [sessionId]);
 
+  // Initialize the chat service with a PDF from Supabase
+  const initializeChatForPdf = useCallback(async (fileId: string): Promise<boolean> => {
+    setIsInitializing(true);
+    setError(null);
+    setIsInitialized(false);
+
+    // Generate a fresh session ID for this PDF
+    const newSessionId = uuidv4();
+    setSessionId(newSessionId);
+    setCurrentFileId(fileId);
+
+    try {
+      // Initialize the chat session with the fileId from Supabase
+      const response = await fetch('/api/chat/init', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          fileId,
+          sessionId: newSessionId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to initialize chat for this PDF');
+      }
+
+      setIsInitialized(true);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'An error occurred while initializing chat');
+      return false;
+    } finally {
+      setIsInitializing(false);
+    }
+  }, []);
+
   // Ask a question to the PDF
   const askQuestion = useCallback(async (question: string): Promise<string> => {
+    if (!isInitialized || !sessionId) {
+      throw new Error('Chat not initialized. Please upload a PDF first.');
+    }
+
     try {
-      const response = await fetch('/api/chat', {
+      // Use the updated API endpoint
+      const response = await fetch('/api/chat/ask', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -59,20 +105,21 @@ export function usePDFChat(): {
         body: JSON.stringify({
           message: question,
           sessionId,
+          fileId: currentFileId,
         }),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to process question');
       }
-      
+
       const data = await response.json();
       return data.answer;
     } catch (err: any) {
       throw new Error(err.message || 'An error occurred');
     }
-  }, [sessionId]);
+  }, [sessionId, isInitialized, currentFileId]);
 
   // Get chat history
   const getChatHistoryFromSession = useCallback(async (): Promise<ChatMessage[]> => {
@@ -123,5 +170,6 @@ export function usePDFChat(): {
     isInitializing,
     error,
     initializeChat,
+    initializeChatForPdf,
   };
 }

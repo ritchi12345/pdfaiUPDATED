@@ -4,6 +4,7 @@
 import * as pdfParseLib from 'pdf-parse';
 const pdfParse = pdfParseLib.default || pdfParseLib;
 import { ParsedPDF } from '../models/types';
+import { createServerSupabaseClient } from '../lib/supabaseClient';
 
 /**
  * Parses a PDF file and extracts its content and metadata
@@ -96,5 +97,57 @@ export async function extractPageText(file: File, pageNum: number): Promise<stri
   } catch (error) {
     console.error(`Error extracting text from page ${pageNum}:`, error);
     throw new Error(`Failed to extract text from page ${pageNum}`);
+  }
+}
+
+/**
+ * Parses a PDF from a URL and extracts its content and metadata
+ * @param url The URL of the PDF to parse
+ * @returns Promise resolving to a ParsedPDF object
+ */
+export async function parsePDFFromUrl(url: string): Promise<ParsedPDF> {
+  try {
+    // Fetch the PDF file from the URL
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch PDF from URL: ${response.statusText}`);
+    }
+
+    // Convert the response to ArrayBuffer
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = new Uint8Array(arrayBuffer);
+
+    // Use pdf-parse to extract text and metadata
+    const data = await pdfParse(buffer);
+
+    // Extract metadata
+    const metadata = {
+      info: data.info || {},
+      pageCount: data.numpages || 0,
+      title: data.info?.Title || undefined,
+      author: data.info?.Author || undefined,
+      creationDate: data.info?.CreationDate
+        ? new Date(data.info.CreationDate)
+        : undefined,
+    };
+
+    // Split text into chunks (approximately 1000 characters each)
+    const chunkSize = 1000;
+    const text = data.text || '';
+    const chunks = [];
+
+    for (let i = 0; i < text.length; i += chunkSize) {
+      const chunk = text.slice(i, i + chunkSize);
+      chunks.push(chunk);
+    }
+
+    return {
+      text,
+      metadata,
+      chunks,
+    };
+  } catch (error) {
+    console.error('Error parsing PDF from URL:', error);
+    throw new Error('Failed to parse PDF file from URL');
   }
 }

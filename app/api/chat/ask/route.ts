@@ -1,0 +1,44 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { askQuestionInSession } from '@/app/services/langchainService';
+
+interface AskRequest {
+  message: string;
+  sessionId: string;
+  fileId?: string; // Optional for context
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json() as AskRequest;
+    const { message, sessionId } = body;
+    
+    if (!message || !sessionId) {
+      return NextResponse.json(
+        { error: 'Missing required fields: message and sessionId' },
+        { status: 400 }
+      );
+    }
+    
+    // Process the message using the session
+    try {
+      const response = await askQuestionInSession(message, sessionId);
+      
+      // Return the response
+      return NextResponse.json({ 
+        answer: response
+      });
+    } catch (error: any) {
+      console.error('Error processing message:', error);
+      return NextResponse.json(
+        { error: error.message || 'Failed to process question. Session may not be initialized.' },
+        { status: 404 }
+      );
+    }
+  } catch (error) {
+    console.error('Error in chat API:', error);
+    return NextResponse.json(
+      { error: 'Failed to process chat message' },
+      { status: 500 }
+    );
+  }
+}
