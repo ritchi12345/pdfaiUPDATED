@@ -213,9 +213,9 @@ export default function ChatPage() {
       </header>
 
       {/* Main Content - Two Column Layout */}
-      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden">
+      <div className="flex-1 flex flex-col md:flex-row overflow-hidden">
         {/* Left Column - PDF Viewer */}
-        <div className="h-[60vh] md:h-[calc(100vh-64px)] border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 overflow-auto">
+        <div className="w-full md:w-1/2 h-[60vh] md:h-[calc(100vh-64px)] border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 overflow-auto">
           {pdfUrl ? (
             <PDFViewer 
               fileUrl={pdfUrl} 
@@ -231,8 +231,8 @@ export default function ChatPage() {
           )}
         </div>
         
-        {/* Right Column - Chat Interface */}
-        <div className="h-[calc(100vh-60vh-64px)] md:h-[calc(100vh-64px)] flex flex-col sticky top-0">
+        {/* Right Column - Chat Interface - Fixed Position on Desktop */}
+        <div className="w-full md:w-1/2 h-[calc(100vh-60vh-64px)] md:h-[calc(100vh-64px)] md:fixed md:right-0 md:top-[64px] md:w-1/2 flex flex-col">
           {isInitializing ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mr-2"></div>

@@ -16,13 +16,17 @@ export async function parsePDF(file: File): Promise<ParsedPDF> {
   const buffer = await file.arrayBuffer();
   
   try {
-    // Use pdf-parse to extract text and metadata
+    // Extract text page by page
+    const pageTexts: Array<{ pageNumber: number; text: string }> = [];
+    
+    // First get document info and total pages
     const data = await pdfParse(new Uint8Array(buffer));
+    const totalPages = data.numpages || 0;
     
     // Extract metadata
     const metadata = {
       info: data.info || {},
-      pageCount: data.numpages || 0,
+      pageCount: totalPages,
       title: data.info?.Title || undefined,
       author: data.info?.Author || undefined,
       creationDate: data.info?.CreationDate 
@@ -30,9 +34,29 @@ export async function parsePDF(file: File): Promise<ParsedPDF> {
         : undefined,
     };
     
-    // Split text into chunks (approximately 1000 characters each)
+    // Extract text from each page separately
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      try {
+        const pageText = await extractPageText(file, pageNum);
+        pageTexts.push({
+          pageNumber: pageNum,
+          text: pageText
+        });
+      } catch (pageError) {
+        console.error(`Error extracting text from page ${pageNum}:`, pageError);
+        // Continue with empty text for this page
+        pageTexts.push({
+          pageNumber: pageNum,
+          text: ''
+        });
+      }
+    }
+    
+    // Combine all page texts into a single string for backward compatibility
+    const text = pageTexts.map(page => page.text).join(' ');
+    
+    // Use the combined text for chunking for backward compatibility
     const chunkSize = 1000;
-    const text = data.text || '';
     const chunks = [];
     
     for (let i = 0; i < text.length; i += chunkSize) {
@@ -44,6 +68,7 @@ export async function parsePDF(file: File): Promise<ParsedPDF> {
       text,
       metadata,
       chunks,
+      pageTexts,
     };
   } catch (error) {
     console.error('Error parsing PDF:', error);
@@ -117,13 +142,14 @@ export async function parsePDFFromUrl(url: string): Promise<ParsedPDF> {
     const arrayBuffer = await response.arrayBuffer();
     const buffer = new Uint8Array(arrayBuffer);
 
-    // Use pdf-parse to extract text and metadata
+    // First get document info and total pages
     const data = await pdfParse(buffer);
+    const totalPages = data.numpages || 0;
 
     // Extract metadata
     const metadata = {
       info: data.info || {},
-      pageCount: data.numpages || 0,
+      pageCount: totalPages,
       title: data.info?.Title || undefined,
       author: data.info?.Author || undefined,
       creationDate: data.info?.CreationDate
@@ -131,9 +157,37 @@ export async function parsePDFFromUrl(url: string): Promise<ParsedPDF> {
         : undefined,
     };
 
+    // Extract text from each page
+    const pageTexts: Array<{ pageNumber: number; text: string }> = [];
+    
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      try {
+        // Extract text for each page individually
+        const options = {
+          max: pageNum,
+          min: pageNum
+        };
+        
+        const pageData = await pdfParse(buffer, options);
+        pageTexts.push({
+          pageNumber: pageNum,
+          text: pageData.text || ''
+        });
+      } catch (pageError) {
+        console.error(`Error extracting text from page ${pageNum}:`, pageError);
+        // Continue with empty text for this page
+        pageTexts.push({
+          pageNumber: pageNum,
+          text: ''
+        });
+      }
+    }
+
+    // Combine all page texts into a single string for backward compatibility
+    const text = pageTexts.map(page => page.text).join(' ');
+    
     // Split text into chunks (approximately 1000 characters each)
     const chunkSize = 1000;
-    const text = data.text || '';
     const chunks = [];
 
     for (let i = 0; i < text.length; i += chunkSize) {
@@ -145,6 +199,7 @@ export async function parsePDFFromUrl(url: string): Promise<ParsedPDF> {
       text,
       metadata,
       chunks,
+      pageTexts,
     };
   } catch (error) {
     console.error('Error parsing PDF from URL:', error);

@@ -37,17 +37,27 @@ async function splitTextIntoChunks(text: string) {
 /**
  * Creates a vector store from the PDF text chunks
  */
-async function createVectorStore(chunks: string[]) {
+async function createVectorStore(chunks: string[], metadatas?: any[]) {
   try {
     const embeddings = new OpenAIEmbeddings({
       openAIApiKey: OPENAI_API_KEY,
     });
     
-    return await MemoryVectorStore.fromTexts(
-      chunks,
-      {},
-      embeddings
-    );
+    // If metadatas provided (page numbers), use them
+    if (metadatas && metadatas.length === chunks.length) {
+      return await MemoryVectorStore.fromTexts(
+        chunks,
+        metadatas,
+        embeddings
+      );
+    } else {
+      // Fallback to empty metadata
+      return await MemoryVectorStore.fromTexts(
+        chunks,
+        chunks.map(() => ({})),
+        embeddings
+      );
+    }
   } catch (error) {
     console.error('Error creating vector store:', error);
     throw new Error('Failed to create vector store for PDF content');
@@ -67,13 +77,51 @@ class PDFChatServiceImpl {
    */
   async initialize(parsedPDF: ParsedPDF) {
     try {
-      // Get chunks from parsed PDF or split the text
-      const chunks = parsedPDF.chunks.length > 0 
-        ? parsedPDF.chunks 
-        : await splitTextIntoChunks(parsedPDF.text);
-      
-      // Create the vector store
-      this.vectorStore = await createVectorStore(chunks);
+      // Check if we have page-specific text
+      if (parsedPDF.pageTexts && parsedPDF.pageTexts.length > 0) {
+        // Create text splitter
+        const splitter = new RecursiveCharacterTextSplitter({
+          chunkSize: 1000,
+          chunkOverlap: 200,
+        });
+
+        // Process each page individually to maintain page number metadata
+        const allChunks: string[] = [];
+        const allMetadata: Array<{ pageNumber: number }> = [];
+
+        // Process each page
+        for (const page of parsedPDF.pageTexts) {
+          if (!page.text) continue;
+          
+          // Split this page's text into chunks
+          const pageChunks = await splitter.splitText(page.text);
+          
+          // Add chunks with page metadata
+          pageChunks.forEach(chunk => {
+            allChunks.push(chunk);
+            allMetadata.push({ pageNumber: page.pageNumber });
+          });
+        }
+
+        if (allChunks.length > 0) {
+          // Create vector store with page-specific chunks
+          this.vectorStore = await createVectorStore(allChunks, allMetadata);
+        } else {
+          // Fallback to the old method if no chunks were created
+          const chunks = parsedPDF.chunks.length > 0 
+            ? parsedPDF.chunks 
+            : await splitTextIntoChunks(parsedPDF.text);
+          
+          this.vectorStore = await createVectorStore(chunks);
+        }
+      } else {
+        // Fallback to the old method if pageTexts is not available
+        const chunks = parsedPDF.chunks.length > 0 
+          ? parsedPDF.chunks 
+          : await splitTextIntoChunks(parsedPDF.text);
+        
+        this.vectorStore = await createVectorStore(chunks);
+      }
       
       // Initialize the chat model
       const model = new ChatOpenAI({

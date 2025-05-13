@@ -178,8 +178,7 @@ const ChatInterface = forwardRef<ChatInterfaceRef, ChatInterfaceProps>(({
                           whileHover={{ scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
                         >
-                          Ref {idx + 1}
-                          {doc.metadata?.pageNumber ? ` (Page ${doc.metadata.pageNumber})` : ''}
+                          {doc.metadata?.pageNumber ? `Page ${doc.metadata.pageNumber}` : `Ref ${idx + 1}`}
                         </motion.button>
                       ))}
                     </div>

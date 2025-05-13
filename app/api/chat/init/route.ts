@@ -135,11 +135,36 @@ export async function POST(request: NextRequest) {
       chunks.push(chunk);
     }
 
+    // Extract text from each page to create pageTexts
+    const pageTexts: Array<{ pageNumber: number; text: string }> = [];
+    
+    try {
+      // Extract text page by page
+      for (let pageNum = 1; pageNum <= metadata.pageCount; pageNum++) {
+        const options = {
+          max: pageNum,
+          min: pageNum,
+        };
+        
+        // Get text for just this page
+        const pageData = await pdfParse(new Uint8Array(arrayBuffer), options);
+        
+        pageTexts.push({
+          pageNumber: pageNum,
+          text: pageData.text || '',
+        });
+      }
+    } catch (pageError) {
+      console.error("Error extracting page-specific text:", pageError);
+      // Continue with the basic text extraction approach
+    }
+    
     // Create our parsedPdf object
     const parsedPdf = {
       text,
       metadata,
       chunks,
+      pageTexts: pageTexts.length > 0 ? pageTexts : undefined,
     };
 
     // Initialize chat session with the parsed PDF

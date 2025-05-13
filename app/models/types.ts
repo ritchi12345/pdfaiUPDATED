@@ -9,6 +9,10 @@ export interface ParsedPDF {
     creationDate?: Date;
   };
   chunks: string[];
+  pageTexts?: Array<{
+    pageNumber: number;
+    text: string;
+  }>;
 }
 
 // Source document interface for references

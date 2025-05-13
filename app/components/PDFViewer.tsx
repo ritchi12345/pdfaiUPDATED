@@ -55,24 +55,35 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
     if (highlightText) {
       setCurrentHighlight(highlightText);
       
-      // If the highlighted text is on a different page, navigate to that page
-      if (highlightText.pageNumber !== pageNumber) {
-        setPageNumber(highlightText.pageNumber);
-      }
+      // In continuous scrolling mode, need to ensure target page is rendered
+      // Store current highlight for later highlighting when pages render
       
-      // Add a small delay to allow the page to render before attempting to highlight
-      setTimeout(() => {
-        highlightTextInDocument(highlightText.text, highlightText.pageNumber);
-      }, 500);
+      // Scroll to the page containing the highlight first
+      const targetPageElement = document.getElementById(`pdf-page-${highlightText.pageNumber}`);
+      if (targetPageElement) {
+        // If the page is already in the DOM, scroll to it
+        targetPageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Add a small delay to allow the page to be centered before attempting to highlight
+        setTimeout(() => {
+          highlightTextInDocument(highlightText.text, highlightText.pageNumber);
+        }, 500);
+      } else {
+        // For single page view, navigate to the correct page first
+        if (highlightText.pageNumber !== pageNumber) {
+          setPageNumber(highlightText.pageNumber);
+          // Highlighting will happen when the page loads
+        }
+      }
     }
-  }, [highlightText, pageNumber]);
+  }, [highlightText]);
   
   // Function to highlight text within the PDF
   const highlightTextInDocument = (text: string, textPageNumber: number) => {
-    if (pageNumber !== textPageNumber || !text.trim()) return;
+    if (!text.trim()) return;
     
     try {
-      // Remove any existing highlights
+      // Remove any existing highlights first
       document.querySelectorAll('.highlight-text').forEach(el => {
         const parent = el.parentNode;
         if (parent) {
@@ -83,62 +94,135 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
         }
       });
       
-      // Get all text elements in the current PDF page
-      const textElements = document.querySelectorAll('.react-pdf__Page__textContent span');
+      // Target the specific page's text layer
+      const pageSelector = `.react-pdf__Page[data-page-number="${textPageNumber}"] .react-pdf__Page__textContent span`;
+      const textElements = document.querySelectorAll(pageSelector);
+      
+      if (textElements.length === 0) {
+        console.log(`No text elements found for page ${textPageNumber}. Current page: ${pageNumber}`);
+        return;
+      }
       
       // Clean the search text for better matching
-      const cleanSearchText = text.trim().replace(/\s+/g, ' ').toLowerCase();
+      let cleanSearchText = text.trim().replace(/\s+/g, ' ').toLowerCase();
+      
+      // If text is very long, take first and last sentence for better matching
+      if (cleanSearchText.length > 150) {
+        const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+        if (sentences.length > 1) {
+          const firstSentence = sentences[0];
+          const lastSentence = sentences[sentences.length - 1];
+          // If we still have too much text, use keywords extraction
+          if ((firstSentence + lastSentence).length > 150) {
+            // Extract important words - let's use words with 5+ characters as "important"
+            const importantWords = text.match(/\b\w{5,}\b/g) || [];
+            if (importantWords.length > 3) {
+              // Use the first few important words for matching
+              cleanSearchText = importantWords.slice(0, 5).join(' ').toLowerCase();
+            }
+          } else {
+            // Use first and last sentences
+            cleanSearchText = (firstSentence + " " + lastSentence).toLowerCase().replace(/\s+/g, ' ');
+          }
+        }
+      }
+      
+      // Collect text content from the page into a single string to find matches
+      let pageTextContent = '';
+      const elementTexts: {element: Element, startIndex: number, text: string}[] = [];
+      
+      textElements.forEach(element => {
+        const text = element.textContent || '';
+        elementTexts.push({
+          element,
+          startIndex: pageTextContent.length,
+          text
+        });
+        pageTextContent += text + ' ';
+      });
+      
+      pageTextContent = pageTextContent.toLowerCase();
       
       // Try to find and highlight the text
       let foundMatch = false;
+      let matchStart = -1;
       
-      // First pass: try to find exact matches
-      textElements.forEach(element => {
-        const elementText = element.textContent || '';
-        if (elementText.toLowerCase().includes(cleanSearchText)) {
-          // Highlight this element
-          const highlightedText = elementText.replace(
-            new RegExp(cleanSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
-            match => `<span class="highlight-text">${match}</span>`
-          );
-          element.innerHTML = highlightedText;
-          foundMatch = true;
+      // First try exact match
+      matchStart = pageTextContent.indexOf(cleanSearchText);
+      
+      // If no exact match, try with partial matching
+      if (matchStart === -1) {
+        // Try to find the longest matching substring
+        let longestMatch = '';
+        let longestMatchStart = -1;
+        
+        // Split search text into words
+        const searchWords = cleanSearchText.split(' ').filter(w => w.length > 3);
+        
+        for (const word of searchWords) {
+          if (word.length < 4) continue; // Skip very short words
           
-          // Scroll the highlighted element into view
+          const wordIndex = pageTextContent.indexOf(word);
+          if (wordIndex !== -1) {
+            // Look for nearby words to expand match
+            let startPos = Math.max(0, wordIndex - 50);
+            let endPos = Math.min(pageTextContent.length, wordIndex + word.length + 150);
+            let contextText = pageTextContent.substring(startPos, endPos);
+            
+            // Count how many words from our search appear in this context
+            let matchesInContext = searchWords.filter(w => contextText.includes(w)).length;
+            
+            if (matchesInContext > 1 && contextText.length > longestMatch.length) {
+              longestMatch = contextText;
+              longestMatchStart = startPos;
+            }
+          }
+        }
+        
+        if (longestMatch) {
+          matchStart = longestMatchStart;
+          cleanSearchText = longestMatch;
+          foundMatch = true;
+        }
+      } else {
+        foundMatch = true;
+      }
+      
+      // If we found a match, highlight the relevant elements
+      if (foundMatch && matchStart !== -1) {
+        const matchEnd = matchStart + cleanSearchText.length;
+        
+        // Find elements that overlap with the match
+        elementTexts.forEach(({element, startIndex, text}) => {
+          const endIndex = startIndex + text.length;
+          
+          // Check if this element overlaps with the match
+          if (startIndex <= matchEnd && endIndex >= matchStart) {
+            // Highlight this element
+            element.classList.add('highlight-text');
+          }
+        });
+        
+        // Scroll to the first highlighted element
+        setTimeout(() => {
+          const highlightElement = document.querySelector('.highlight-text');
+          highlightElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 100);
+      } else {
+        console.log('No match found for text:', cleanSearchText);
+        
+        // Last resort: highlight some text from the page as a fallback
+        if (textElements.length > 0) {
+          // Highlight first few text elements as fallback
+          for (let i = 0; i < Math.min(3, textElements.length); i++) {
+            textElements[i].classList.add('highlight-text');
+          }
+          
+          // Scroll the first element into view
           setTimeout(() => {
             const highlightElement = document.querySelector('.highlight-text');
             highlightElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }, 100);
-        }
-      });
-      
-      // If no exact match, try to match parts of the text
-      if (!foundMatch && cleanSearchText.length > 10) {
-        // Split the search text into chunks of at least 5 words
-        const words = cleanSearchText.split(' ');
-        for (let i = 0; i < words.length - 4; i += 5) {
-          const chunk = words.slice(i, i + 5).join(' ');
-          if (chunk.length > 10) {
-            textElements.forEach(element => {
-              const elementText = element.textContent || '';
-              if (elementText.toLowerCase().includes(chunk)) {
-                // Highlight this element
-                const highlightedText = elementText.replace(
-                  new RegExp(chunk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
-                  match => `<span class="highlight-text">${match}</span>`
-                );
-                element.innerHTML = highlightedText;
-                foundMatch = true;
-                
-                // Scroll the highlighted element into view
-                setTimeout(() => {
-                  const highlightElement = document.querySelector('.highlight-text');
-                  highlightElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                }, 100);
-              }
-            });
-          }
-          if (foundMatch) break;
         }
       }
     } catch (error) {
@@ -202,14 +286,7 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
     setLoading(false);
   }
 
-  function changePage(offset: number) {
-    setPageNumber(prevPageNumber => {
-      const newPageNumber = prevPageNumber + offset;
-      return newPageNumber >= 1 && newPageNumber <= (numPages || 1) 
-        ? newPageNumber 
-        : prevPageNumber;
-    });
-  }
+  // We no longer need the changePage function for continuous scrolling
 
   function zoomIn() {
     setScale(prevScale => Math.min(prevScale + 0.2, 2.5));
@@ -338,6 +415,8 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
             display: flex;
             flex-direction: column;
             align-items: center;
+            min-height: 100%;
+            padding-bottom: 20px; /* Add some padding at the bottom for better scrolling */
           }
           .react-pdf__Page__textContent {
             width: auto !important;
@@ -361,22 +440,31 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
           loading={<div className="flex justify-center items-center h-full">Loading PDF...</div>}
           className="pdf-document"
         >
-          <Page
-            pageNumber={pageNumber}
-            width={getPageWidth()}
-            scale={scale}
-            renderTextLayer={true}
-            renderAnnotationLayer={true}
-            className="pdf-page"
-            onLoadSuccess={() => {
-              if (currentHighlight && currentHighlight.pageNumber === pageNumber) {
-                // Apply highlighting after the page is loaded with a small delay
-                setTimeout(() => {
-                  highlightTextInDocument(currentHighlight.text, currentHighlight.pageNumber);
-                }, 100);
-              }
-            }}
-          />
+          {!loading && !error && numPages && Array.from(new Array(numPages), (el, index) => (
+            <div key={`page_container_${index + 1}`} id={`pdf-page-${index + 1}`} className="mb-4 shadow-lg">
+              <Page
+                key={`page_${index + 1}`}
+                pageNumber={index + 1}
+                width={getPageWidth()}
+                scale={scale}
+                renderTextLayer={true}
+                renderAnnotationLayer={true}
+                className="pdf-page"
+                data-page-number={index + 1}
+                onRenderSuccess={() => {
+                  if (currentHighlight && currentHighlight.pageNumber === (index + 1)) {
+                    // Apply highlighting after the page is rendered with a small delay
+                    setTimeout(() => {
+                      highlightTextInDocument(currentHighlight.text, currentHighlight.pageNumber);
+                    }, 200);
+                  }
+                }}
+              />
+              <div className="text-center text-sm text-gray-500 mt-1 mb-3">
+                Page {index + 1} of {numPages}
+              </div>
+            </div>
+          ))}
         </Document>
         
         {/* Selection Popup */}
@@ -391,36 +479,9 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
         )}
       </div>
       
-      {/* Controls */}
+      {/* Controls - Only Zoom */}
       {numPages && !error && (
-        <div className="p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
-          {/* Page Navigation */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={() => changePage(-1)}
-              disabled={pageNumber <= 1}
-              className="p-1 rounded-md bg-gray-200 dark:bg-gray-700 disabled:opacity-50"
-              aria-label="Previous page"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-              </svg>
-            </button>
-            <span className="text-sm">
-              Page {pageNumber} of {numPages}
-            </span>
-            <button
-              onClick={() => changePage(1)}
-              disabled={pageNumber >= numPages}
-              className="p-1 rounded-md bg-gray-200 dark:bg-gray-700 disabled:opacity-50"
-              aria-label="Next page"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
-          
+        <div className="p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-end items-center">
           {/* Zoom Controls */}
           <div className="flex items-center space-x-2">
             <button
