@@ -26,6 +26,7 @@ export async function POST(request: NextRequest) {
 
     // Get Supabase client
     const supabaseAdmin = createServerSupabaseClient();
+    let fileData: Blob | null = null;
 
     try {
       console.log("Attempting to download file with ID:", fileId);
@@ -46,11 +47,11 @@ export async function POST(request: NextRequest) {
       console.log("Files in the bucket:", listData?.map(file => file.name));
 
       // Download the file directly from Supabase
-      const { data: fileData, error: downloadError } = await supabaseAdmin.storage
+      const { data: downloadedFile, error: downloadError } = await supabaseAdmin.storage
         .from('pdfs')
         .download(fileId);
 
-      if (downloadError || !fileData) {
+      if (downloadError || !downloadedFile) {
         console.error('Error downloading PDF from Supabase:', downloadError);
 
         // Try with a signed URL approach as a fallback
@@ -78,10 +79,17 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        return NextResponse.json(
-          { error: 'Could not download PDF from storage directly' },
-          { status: 404 }
-        );
+        // Try to get the file data from the fetch response
+        fileData = await fetchResponse.blob();
+        if (!fileData) {
+          return NextResponse.json(
+            { error: 'Could not download PDF from storage directly' },
+            { status: 404 }
+          );
+        }
+      } else {
+        // Store the downloaded file data
+        fileData = downloadedFile;
       }
     } catch (downloadException) {
       console.error("Exception during download:", downloadException);
@@ -102,8 +110,9 @@ export async function POST(request: NextRequest) {
     // Use pdf-parse directly since we're on the server
     const pdfParse = pdfParseLib.default || pdfParseLib;
 
-    // Parse the PDF data directly
-    const pdfData = await pdfParse(new Uint8Array(await fileData.arrayBuffer()));
+    // Parse the PDF data directly - need to handle different types of Blob/File
+    const arrayBuffer = await fileData.arrayBuffer();
+    const pdfData = await pdfParse(new Uint8Array(arrayBuffer));
 
     // Extract metadata
     const metadata = {

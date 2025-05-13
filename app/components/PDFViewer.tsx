@@ -19,7 +19,7 @@ interface PDFViewerProps {
 export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1.0);
+  const [scale, setScale] = useState<number>(0.7);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
@@ -111,7 +111,7 @@ export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
   return (
     <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-900">
       {/* PDF Container */}
-      <div className="flex-1 overflow-auto flex justify-center p-2">
+      <div className="flex-1 overflow-auto flex justify-center p-2 pdf-container">
         {loading && (
           <div className="flex items-center justify-center h-full w-full">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
@@ -131,6 +131,26 @@ export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
             </div>
           </div>
         )}
+        
+        <style jsx global>{`
+          .pdf-container {
+            overflow: auto !important;
+          }
+          .pdf-page {
+            margin-bottom: 8px;
+          }
+          .pdf-document {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+          }
+          .react-pdf__Page__textContent {
+            width: auto !important;
+            height: auto !important;
+            top: 0 !important;
+            left: 0 !important;
+          }
+        `}</style>
         
         <Document
           file={signedUrl || fileUrl}

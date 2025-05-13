@@ -176,7 +176,7 @@ export default function ChatPage() {
       {/* Main Content - Two Column Layout */}
       <div className="flex-1 grid grid-cols-1 md:grid-cols-2 overflow-hidden">
         {/* Left Column - PDF Viewer */}
-        <div className="h-[50vh] md:h-full border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800">
+        <div className="h-[60vh] md:h-[calc(100vh-64px)] border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 overflow-auto">
           {pdfUrl ? (
             <PDFViewer fileUrl={pdfUrl} filePath={fileId} />
           ) : (
@@ -187,7 +187,7 @@ export default function ChatPage() {
         </div>
         
         {/* Right Column - Chat Interface */}
-        <div className="h-[50vh] md:h-full flex flex-col">
+        <div className="h-[calc(100vh-60vh-64px)] md:h-[calc(100vh-64px)] flex flex-col sticky top-0">
           {isInitializing ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mr-2"></div>
