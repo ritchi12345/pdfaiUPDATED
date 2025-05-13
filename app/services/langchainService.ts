@@ -108,8 +108,13 @@ class PDFChatServiceImpl {
   
   /**
    * Asks a question about the PDF
+   * @param question - The question to ask
+   * @param level - The explanation level (e.g., "5 y.o", "High Schooler", "Expert")
    */
-  async askQuestion(question: string): Promise<string> {
+  async askQuestion(
+    question: string,
+    level: string = "High Schooler"
+  ): Promise<{ answer: string; sourceDocuments?: any[] }> {
     if (!this.vectorStore || !this.chain) {
       throw new Error('PDF Chat Service not initialized. Call initialize() first.');
     }
@@ -118,19 +123,25 @@ class PDFChatServiceImpl {
       // Add the human message to the chat history
       this.chatHistory.push(new HumanMessage(question));
       
+      // Create a custom question with the explanation level
+      const formattedQuestion = `${question} (Please explain in a way that a ${level} would understand)`;
+      
       // Get the answer using the chain
       const response = await this.chain.call({
-        question,
+        question: formattedQuestion,
         chat_history: this.chatHistory,
       });
       
       // Extract the answer
       const answer = response.text || 'I couldn\'t find an answer to that question in the document.';
       
+      // Extract source documents
+      const sourceDocuments = response.sourceDocuments || [];
+      
       // Add the AI message to the chat history
       this.chatHistory.push(new AIMessage(answer));
       
-      return answer;
+      return { answer, sourceDocuments };
     } catch (error) {
       console.error('Error asking question:', error);
       throw new Error('Failed to process your question');
@@ -144,6 +155,8 @@ class PDFChatServiceImpl {
     return this.chatHistory.map(msg => ({
       role: msg._getType() === 'human' ? 'user' : 'assistant',
       content: msg.content,
+      // Add sourceDocuments if they exist in the message metadata
+      sourceDocuments: msg.sourceDocuments || undefined
     }));
   }
   
@@ -180,14 +193,18 @@ export async function initializeChatSession(parsedPDF: ParsedPDF, sessionId: str
 /**
  * Server action to ask a question in a chat session
  */
-export async function askQuestionInSession(question: string, sessionId: string): Promise<string> {
+export async function askQuestionInSession(
+  question: string, 
+  sessionId: string,
+  level: string = "High Schooler"
+): Promise<{ answer: string; sourceDocuments?: any[] }> {
   const service = activeSessions[sessionId];
   
   if (!service) {
     throw new Error('Session not found. Please upload a PDF first.');
   }
   
-  return await service.askQuestion(question);
+  return await service.askQuestion(question, level);
 }
 
 /**

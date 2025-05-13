@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { ParsedPDF, PDFChatService, ChatMessage } from '../models/types';
+import { ParsedPDF, PDFChatService, ChatMessage, ChatResponse } from '../models/types';
 import { initializeChatSession, askQuestionInSession, getChatHistory, clearChatSession } from '../services/langchainService';
 
 export function usePDFChat(): {
@@ -90,7 +90,7 @@ export function usePDFChat(): {
   }, []);
 
   // Ask a question to the PDF
-  const askQuestion = useCallback(async (question: string): Promise<string> => {
+  const askQuestion = useCallback(async (question: string, level: string = "High Schooler"): Promise<ChatResponse> => {
     if (!isInitialized || !sessionId) {
       throw new Error('Chat not initialized. Please upload a PDF first.');
     }
@@ -106,6 +106,7 @@ export function usePDFChat(): {
           message: question,
           sessionId,
           fileId: currentFileId,
+          level,
         }),
       });
 
@@ -115,7 +116,11 @@ export function usePDFChat(): {
       }
 
       const data = await response.json();
-      return data.answer;
+      // Return the complete response with answer and sourceDocuments
+      return {
+        answer: data.answer,
+        sourceDocuments: data.sourceDocuments || []
+      };
     } catch (err: any) {
       throw new Error(err.message || 'An error occurred');
     }

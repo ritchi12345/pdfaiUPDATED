@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, forwardRef } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
+import SelectionPopup from './SelectionPopup';
 
 // Configure pdfjs worker with fallback options
 if (typeof window !== 'undefined') {
@@ -14,9 +15,18 @@ if (typeof window !== 'undefined') {
 interface PDFViewerProps {
   fileUrl: string;
   filePath?: string; // Optional direct Supabase path
+  highlightText?: { text: string, pageNumber: number } | null;
+  onTextSelect?: (selectedText: string, pageNumber: number) => void;
+  ref?: React.Ref<any>;
 }
 
-export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
+
+const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({ 
+  fileUrl, 
+  filePath,
+  highlightText,
+  onTextSelect
+}, ref) => {
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [scale, setScale] = useState<number>(0.7);
@@ -24,6 +34,11 @@ export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
   const [error, setError] = useState<string | null>(null);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [windowWidth, setWindowWidth] = useState<number>(typeof window !== 'undefined' ? window.innerWidth : 0);
+  const [currentHighlight, setCurrentHighlight] = useState<{ text: string, pageNumber: number } | null>(null);
+  const [selectedText, setSelectedText] = useState<string>("");
+  const [popupPosition, setPopupPosition] = useState<{ top: number; left: number } | null>(null);
+  const [isPopupVisible, setIsPopupVisible] = useState<boolean>(false);
+  const pdfContainerRef = useRef<HTMLDivElement>(null);
 
   // Handle window resize
   useEffect(() => {
@@ -34,6 +49,102 @@ export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Update current highlight when highlightText prop changes
+  useEffect(() => {
+    if (highlightText) {
+      setCurrentHighlight(highlightText);
+      
+      // If the highlighted text is on a different page, navigate to that page
+      if (highlightText.pageNumber !== pageNumber) {
+        setPageNumber(highlightText.pageNumber);
+      }
+      
+      // Add a small delay to allow the page to render before attempting to highlight
+      setTimeout(() => {
+        highlightTextInDocument(highlightText.text, highlightText.pageNumber);
+      }, 500);
+    }
+  }, [highlightText, pageNumber]);
+  
+  // Function to highlight text within the PDF
+  const highlightTextInDocument = (text: string, textPageNumber: number) => {
+    if (pageNumber !== textPageNumber || !text.trim()) return;
+    
+    try {
+      // Remove any existing highlights
+      document.querySelectorAll('.highlight-text').forEach(el => {
+        const parent = el.parentNode;
+        if (parent) {
+          // Replace the highlight span with its text content
+          parent.replaceChild(document.createTextNode(el.textContent || ''), el);
+          // Normalize the parent to merge adjacent text nodes
+          parent.normalize();
+        }
+      });
+      
+      // Get all text elements in the current PDF page
+      const textElements = document.querySelectorAll('.react-pdf__Page__textContent span');
+      
+      // Clean the search text for better matching
+      const cleanSearchText = text.trim().replace(/\s+/g, ' ').toLowerCase();
+      
+      // Try to find and highlight the text
+      let foundMatch = false;
+      
+      // First pass: try to find exact matches
+      textElements.forEach(element => {
+        const elementText = element.textContent || '';
+        if (elementText.toLowerCase().includes(cleanSearchText)) {
+          // Highlight this element
+          const highlightedText = elementText.replace(
+            new RegExp(cleanSearchText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+            match => `<span class="highlight-text">${match}</span>`
+          );
+          element.innerHTML = highlightedText;
+          foundMatch = true;
+          
+          // Scroll the highlighted element into view
+          setTimeout(() => {
+            const highlightElement = document.querySelector('.highlight-text');
+            highlightElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }, 100);
+        }
+      });
+      
+      // If no exact match, try to match parts of the text
+      if (!foundMatch && cleanSearchText.length > 10) {
+        // Split the search text into chunks of at least 5 words
+        const words = cleanSearchText.split(' ');
+        for (let i = 0; i < words.length - 4; i += 5) {
+          const chunk = words.slice(i, i + 5).join(' ');
+          if (chunk.length > 10) {
+            textElements.forEach(element => {
+              const elementText = element.textContent || '';
+              if (elementText.toLowerCase().includes(chunk)) {
+                // Highlight this element
+                const highlightedText = elementText.replace(
+                  new RegExp(chunk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'),
+                  match => `<span class="highlight-text">${match}</span>`
+                );
+                element.innerHTML = highlightedText;
+                foundMatch = true;
+                
+                // Scroll the highlighted element into view
+                setTimeout(() => {
+                  const highlightElement = document.querySelector('.highlight-text');
+                  highlightElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }, 100);
+              }
+            });
+          }
+          if (foundMatch) break;
+        }
+      }
+    } catch (error) {
+      console.error('Error highlighting text:', error);
+    }
+  };
 
   // Get a signed URL if we have a filePath
   useEffect(() => {
@@ -107,9 +218,93 @@ export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
   function zoomOut() {
     setScale(prevScale => Math.max(prevScale - 0.2, 0.5));
   }
+  
+  // Handle text selection
+  const handleTextSelection = () => {
+    const selection = window.getSelection();
+    if (selection && selection.toString().trim().length > 0) {
+      const selectedTextContent = selection.toString().trim();
+      setSelectedText(selectedTextContent);
+      
+      // Calculate position for popup
+      try {
+        const range = selection.getRangeAt(0);
+        const rect = range.getBoundingClientRect();
+        const containerRect = pdfContainerRef.current?.getBoundingClientRect();
+        
+        if (containerRect) {
+          // Position the popup near the selection
+          setPopupPosition({
+            top: rect.bottom - containerRect.top + (pdfContainerRef.current?.scrollTop || 0) + 5,
+            left: rect.left - containerRect.left + 10
+          });
+          setIsPopupVisible(true);
+        }
+      } catch (e) {
+        console.error("Error positioning popup:", e);
+      }
+    } else {
+      // Only hide popup if click is outside popup
+      // We'll handle this in a separate click handler
+    }
+  }
+  
+  // Handle clicking the "Explain" button
+  const handleExplainClick = () => {
+    if (onTextSelect && selectedText) {
+      onTextSelect(selectedText, pageNumber);
+    }
+    setIsPopupVisible(false);
+  }
+  
+  // Handle clicking the "Cancel" button
+  const handleCancelClick = () => {
+    setIsPopupVisible(false);
+    setSelectedText("");
+  }
+  
+  // Handle clicks outside to close popup
+  const handleOutsideClick = (e: MouseEvent) => {
+    const popupElement = document.getElementById('selection-popup');
+    if (isPopupVisible && popupElement && !popupElement.contains(e.target as Node) && 
+        e.target !== popupElement) {
+      setIsPopupVisible(false);
+    }
+  }
+
+  // Add event listeners for text selection and outside click
+  useEffect(() => {
+    const container = pdfContainerRef.current;
+    if (container) {
+      container.addEventListener('mouseup', handleTextSelection);
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    
+    return () => {
+      if (container) {
+        container.removeEventListener('mouseup', handleTextSelection);
+        document.removeEventListener('mousedown', handleOutsideClick);
+      }
+    };
+  }, [pageNumber, isPopupVisible]); // Re-add listeners when page or popup visibility changes
+  
+  // Use the custom ref for our methods, but still attach the forwarded ref to the div
+  const combinedRef = (el: HTMLDivElement | null) => {
+    // Set our internal ref
+    if (pdfContainerRef) {
+      pdfContainerRef.current = el;
+    }
+    
+    // Forward the ref
+    if (typeof ref === 'function') {
+      ref(el);
+    } else if (ref) {
+      ref.current = el;
+    }
+  };
 
   return (
-    <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-900">
+    <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-900" ref={combinedRef}>
       {/* PDF Container */}
       <div className="flex-1 overflow-auto flex justify-center p-2 pdf-container">
         {loading && (
@@ -150,6 +345,13 @@ export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
             top: 0 !important;
             left: 0 !important;
           }
+          /* Highlight style for matched text */
+          .highlight-text {
+            background-color: rgba(255, 255, 0, 0.4);
+            border-radius: 2px;
+            padding: 0 2px;
+            margin: 0 -2px;
+          }
         `}</style>
         
         <Document
@@ -166,8 +368,27 @@ export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
             renderTextLayer={true}
             renderAnnotationLayer={true}
             className="pdf-page"
+            onLoadSuccess={() => {
+              if (currentHighlight && currentHighlight.pageNumber === pageNumber) {
+                // Apply highlighting after the page is loaded with a small delay
+                setTimeout(() => {
+                  highlightTextInDocument(currentHighlight.text, currentHighlight.pageNumber);
+                }, 100);
+              }
+            }}
           />
         </Document>
+        
+        {/* Selection Popup */}
+        {isPopupVisible && popupPosition && (
+          <SelectionPopup
+            id="selection-popup"
+            position={popupPosition}
+            onExplain={handleExplainClick}
+            onCancel={handleCancelClick}
+            isVisible={isPopupVisible}
+          />
+        )}
       </div>
       
       {/* Controls */}
@@ -230,4 +451,6 @@ export default function PDFViewer({ fileUrl, filePath }: PDFViewerProps) {
       )}
     </div>
   );
-}
+});
+
+export default PDFViewerComponent;

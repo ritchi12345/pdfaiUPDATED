@@ -5,12 +5,13 @@ interface AskRequest {
   message: string;
   sessionId: string;
   fileId?: string; // Optional for context
+  level?: string; // Explanation level
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json() as AskRequest;
-    const { message, sessionId } = body;
+    const { message, sessionId, level } = body;
     
     if (!message || !sessionId) {
       return NextResponse.json(
@@ -21,12 +22,10 @@ export async function POST(request: NextRequest) {
     
     // Process the message using the session
     try {
-      const response = await askQuestionInSession(message, sessionId);
+      const response = await askQuestionInSession(message, sessionId, level);
       
-      // Return the response
-      return NextResponse.json({ 
-        answer: response
-      });
+      // Return the response with source documents
+      return NextResponse.json(response);
     } catch (error: any) {
       console.error('Error processing message:', error);
       return NextResponse.json(

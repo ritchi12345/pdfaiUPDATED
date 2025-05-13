@@ -1,11 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import ChatInterface from '@/app/components/ChatInterface';
 import PDFViewer from '@/app/components/PDFViewer';
 import { supabase } from '@/app/lib/supabaseClient';
 import { usePDFChat } from '@/app/hooks/usePDFChat';
+import { SourceDocument, ChatResponse } from '@/app/models/types';
+import { ExplanationLevel, EXPLANATION_LEVELS } from '@/app/components/ChatInterface';
 
 export default function ChatPage() {
   const params = useParams();
@@ -16,6 +18,10 @@ export default function ChatPage() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [loadingPdf, setLoadingPdf] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [activeHighlight, setActiveHighlight] = useState<{ text: string, pageNumber: number } | null>(null);
+  const [explanationLevel, setExplanationLevel] = useState<ExplanationLevel>("High Schooler");
+  const pdfViewerRef = useRef<any>(null);
+  const chatInterfaceRef = useRef<{ sendMessage: (message: string) => Promise<void> }>(null);
   
   // Get the chat service from the hook
   const { 
@@ -69,16 +75,49 @@ export default function ChatPage() {
   }, [fileId, router, initializeChatForPdf]);
 
   // Handle sending a message
-  const handleSendMessage = async (message: string): Promise<string> => {
+  const handleSendMessage = async (message: string, level: ExplanationLevel): Promise<ChatResponse> => {
     if (!chatService) {
-      return 'Chat not initialized. Please wait or try reloading the page.';
+      return { answer: 'Chat not initialized. Please wait or try reloading the page.' };
     }
     
     try {
-      return await chatService.askQuestion(message);
+      return await chatService.askQuestion(message, level);
     } catch (error: any) {
       console.error('Error processing message:', error);
       throw new Error(error.message || 'Failed to process your message');
+    }
+  };
+  
+  // Handle reference click to highlight text in the PDF
+  const handleReferenceClick = (sourceDoc: SourceDocument, index: number) => {
+    console.log(`Reference ${index} clicked:`, sourceDoc);
+    
+    if (sourceDoc.metadata?.pageNumber && sourceDoc.pageContent) {
+      // First clear any previous highlight by setting to null
+      setActiveHighlight(null);
+      
+      // Then set the new highlight after a brief delay to ensure the state change is processed
+      setTimeout(() => {
+        setActiveHighlight({
+          text: sourceDoc.pageContent,
+          pageNumber: sourceDoc.metadata.pageNumber
+        });
+      }, 50);
+    }
+  };
+  
+  // Handle text selection in the PDF
+  const handleTextSelection = async (selectedText: string, pageNumber: number) => {
+    // Format the message to explain the selected text
+    const explainMessage = `Explain this text from the document: "${selectedText}"`;
+    
+    // Use the chat interface ref to send the message directly to the chat
+    if (chatInterfaceRef.current) {
+      try {
+        await chatInterfaceRef.current.sendMessage(explainMessage);
+      } catch (error) {
+        console.error('Error explaining selected text:', error);
+      }
     }
   };
 
@@ -178,7 +217,13 @@ export default function ChatPage() {
         {/* Left Column - PDF Viewer */}
         <div className="h-[60vh] md:h-[calc(100vh-64px)] border-b md:border-b-0 md:border-r border-gray-200 dark:border-gray-800 overflow-auto">
           {pdfUrl ? (
-            <PDFViewer fileUrl={pdfUrl} filePath={fileId} />
+            <PDFViewer 
+              fileUrl={pdfUrl} 
+              filePath={fileId} 
+              highlightText={activeHighlight}
+              onTextSelect={handleTextSelection}
+              ref={pdfViewerRef}
+            />
           ) : (
             <div className="flex items-center justify-center h-full">
               <p className="text-gray-500">PDF could not be loaded.</p>
@@ -207,8 +252,12 @@ export default function ChatPage() {
             </div>
           ) : (
             <ChatInterface
+              ref={chatInterfaceRef}
               onSendMessage={handleSendMessage}
               isReady={!!chatService && !isInitializing}
+              onReferenceClick={handleReferenceClick}
+              selectedLevel={explanationLevel}
+              onLevelChange={setExplanationLevel}
             />
           )}
         </div>
