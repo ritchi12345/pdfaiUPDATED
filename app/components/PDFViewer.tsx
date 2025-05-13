@@ -103,128 +103,123 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
         return;
       }
       
-      // Clean the search text for better matching
-      let cleanSearchText = text.trim().replace(/\s+/g, ' ').toLowerCase();
+      // We need to process the text to extract meaningful parts for matching
+      const originalText = text;
       
-      // If text is very long, take first and last sentence for better matching
-      if (cleanSearchText.length > 150) {
-        const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
-        if (sentences.length > 1) {
-          const firstSentence = sentences[0];
-          const lastSentence = sentences[sentences.length - 1];
-          // If we still have too much text, use keywords extraction
-          if ((firstSentence + lastSentence).length > 150) {
-            // Extract important words - let's use words with 5+ characters as "important"
-            const importantWords = text.match(/\b\w{5,}\b/g) || [];
-            if (importantWords.length > 3) {
-              // Use the first few important words for matching
-              cleanSearchText = importantWords.slice(0, 5).join(' ').toLowerCase();
+      // 1. Break into sentences for sentence-level matching
+      const sentences = originalText.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 10);
+      
+      // 2. Extract important keywords (longer words are more distinctive)
+      const keywords = originalText.match(/\b[a-zA-Z]{6,}\b/g) || [];
+      
+      // Get all text spans from the page
+      const pageSpans = Array.from(textElements).map(el => ({
+        element: el,
+        text: el.textContent || ''
+      }));
+      
+      // Combines the text of all spans on the page for searching
+      const pageFullText = pageSpans.map(span => span.text).join(' ');
+      
+      // Elements we'll highlight
+      const elementsToHighlight = new Set<Element>();
+      let foundMatch = false;
+      
+      // Try to find significant sentences from the source document
+      for (const sentence of sentences) {
+        if (sentence.length < 15) continue; // Skip very short sentences
+        
+        const cleanSentence = sentence.replace(/\s+/g, ' ').trim().toLowerCase();
+        
+        if (pageFullText.toLowerCase().includes(cleanSentence)) {
+          // Find which elements might contain this sentence
+          for (const span of pageSpans) {
+            if (span.text.toLowerCase().includes(cleanSentence)) {
+              elementsToHighlight.add(span.element);
+              foundMatch = true;
             }
-          } else {
-            // Use first and last sentences
-            cleanSearchText = (firstSentence + " " + lastSentence).toLowerCase().replace(/\s+/g, ' ');
+          }
+          
+          // If we found a specific sentence match, prioritize it
+          if (foundMatch) break;
+        }
+      }
+      
+      // If no sentence matches found, try distinctive keyword matching
+      if (!foundMatch && keywords.length > 0) {
+        // Sort by length (longer words are more distinctive)
+        keywords.sort((a, b) => b.length - a.length);
+        
+        // Take top keywords
+        const searchKeywords = keywords.slice(0, 5).map(w => w.toLowerCase());
+        
+        // Find elements containing these keywords
+        for (const span of pageSpans) {
+          const spanText = span.text.toLowerCase();
+          
+          for (const keyword of searchKeywords) {
+            if (spanText.includes(keyword)) {
+              elementsToHighlight.add(span.element);
+              foundMatch = true;
+              break;
+            }
+          }
+          
+          // Limit number of highlighted elements
+          if (elementsToHighlight.size >= 5) break;
+        }
+      }
+      
+      // If still no matches, fallback to basic text matching
+      if (!foundMatch) {
+        // Clean and prepare search text
+        let cleanSearchText = originalText.trim().replace(/\s+/g, ' ').toLowerCase();
+        
+        // If too long, just use the first 100 chars
+        if (cleanSearchText.length > 100) {
+          cleanSearchText = cleanSearchText.substring(0, 100);
+        }
+        
+        // Try to match this text in the page content
+        for (const span of pageSpans) {
+          const spanText = span.text.toLowerCase();
+          
+          // Check for partial matches
+          if (spanText.includes(cleanSearchText.substring(0, 20)) || 
+              cleanSearchText.includes(spanText)) {
+            elementsToHighlight.add(span.element);
+            foundMatch = true;
           }
         }
       }
       
-      // Collect text content from the page into a single string to find matches
-      let pageTextContent = '';
-      const elementTexts: {element: Element, startIndex: number, text: string}[] = [];
+      // Last resort - just highlight first few elements on the page
+      if (!foundMatch || elementsToHighlight.size === 0) {
+        for (let i = 0; i < Math.min(4, pageSpans.length); i++) {
+          elementsToHighlight.add(pageSpans[i].element);
+        }
+      }
       
-      textElements.forEach(element => {
-        const text = element.textContent || '';
-        elementTexts.push({
-          element,
-          startIndex: pageTextContent.length,
-          text
-        });
-        pageTextContent += text + ' ';
+      // Apply highlights
+      elementsToHighlight.forEach(element => {
+        element.classList.add('highlight-text');
       });
       
-      pageTextContent = pageTextContent.toLowerCase();
-      
-      // Try to find and highlight the text
-      let foundMatch = false;
-      let matchStart = -1;
-      
-      // First try exact match
-      matchStart = pageTextContent.indexOf(cleanSearchText);
-      
-      // If no exact match, try with partial matching
-      if (matchStart === -1) {
-        // Try to find the longest matching substring
-        let longestMatch = '';
-        let longestMatchStart = -1;
+      // Scroll to the first highlighted element
+      setTimeout(() => {
+        const highlightElement = document.querySelector('.highlight-text');
+        const pageElement = document.getElementById(`pdf-page-${textPageNumber}`);
         
-        // Split search text into words
-        const searchWords = cleanSearchText.split(' ').filter(w => w.length > 3);
-        
-        for (const word of searchWords) {
-          if (word.length < 4) continue; // Skip very short words
+        if (pageElement) {
+          pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
           
-          const wordIndex = pageTextContent.indexOf(word);
-          if (wordIndex !== -1) {
-            // Look for nearby words to expand match
-            let startPos = Math.max(0, wordIndex - 50);
-            let endPos = Math.min(pageTextContent.length, wordIndex + word.length + 150);
-            let contextText = pageTextContent.substring(startPos, endPos);
-            
-            // Count how many words from our search appear in this context
-            let matchesInContext = searchWords.filter(w => contextText.includes(w)).length;
-            
-            if (matchesInContext > 1 && contextText.length > longestMatch.length) {
-              longestMatch = contextText;
-              longestMatchStart = startPos;
-            }
-          }
-        }
-        
-        if (longestMatch) {
-          matchStart = longestMatchStart;
-          cleanSearchText = longestMatch;
-          foundMatch = true;
-        }
-      } else {
-        foundMatch = true;
-      }
-      
-      // If we found a match, highlight the relevant elements
-      if (foundMatch && matchStart !== -1) {
-        const matchEnd = matchStart + cleanSearchText.length;
-        
-        // Find elements that overlap with the match
-        elementTexts.forEach(({element, startIndex, text}) => {
-          const endIndex = startIndex + text.length;
-          
-          // Check if this element overlaps with the match
-          if (startIndex <= matchEnd && endIndex >= matchStart) {
-            // Highlight this element
-            element.classList.add('highlight-text');
-          }
-        });
-        
-        // Scroll to the first highlighted element
-        setTimeout(() => {
-          const highlightElement = document.querySelector('.highlight-text');
-          highlightElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 100);
-      } else {
-        console.log('No match found for text:', cleanSearchText);
-        
-        // Last resort: highlight some text from the page as a fallback
-        if (textElements.length > 0) {
-          // Highlight first few text elements as fallback
-          for (let i = 0; i < Math.min(3, textElements.length); i++) {
-            textElements[i].classList.add('highlight-text');
-          }
-          
-          // Scroll the first element into view
+          // Then scroll to the specific highlight
           setTimeout(() => {
-            const highlightElement = document.querySelector('.highlight-text');
             highlightElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }, 100);
+          }, 200);
         }
-      }
+      }, 100);
+      
     } catch (error) {
       console.error('Error highlighting text:', error);
     }
@@ -426,10 +421,14 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
           }
           /* Highlight style for matched text */
           .highlight-text {
-            background-color: rgba(255, 255, 0, 0.4);
+            background-color: rgba(255, 235, 59, 0.7); /* Brighter yellow */
             border-radius: 2px;
             padding: 0 2px;
             margin: 0 -2px;
+            position: relative;
+            display: inline;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            border-bottom: 2px solid rgba(255, 152, 0, 0.7); /* Orange underline for more visibility */
           }
         `}</style>
         
