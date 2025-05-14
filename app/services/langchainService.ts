@@ -4,12 +4,10 @@ import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { OpenAIEmbeddings } from 'langchain/embeddings/openai';
 import { MemoryVectorStore } from 'langchain/vectorstores/memory';
 import { ChatOpenAI } from 'langchain/chat_models/openai';
-import {
-  ConversationalRetrievalQAChain,
-  loadQARefineChain
-} from 'langchain/chains';
-import { StringOutputParser } from 'langchain/schema/output_parser';
-import { AIMessage, HumanMessage } from 'langchain/schema';
+// Import from @langchain/core packages
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { StringOutputParser } from '@langchain/core/output_parsers';
+import { AIMessage, HumanMessage } from '@langchain/core/messages';
 import { ParsedPDF } from './pdfParser';
 
 // Initialize environment variables (should be set in .env.local)
@@ -70,7 +68,7 @@ async function createVectorStore(chunks: string[], metadatas?: any[]) {
 class PDFChatServiceImpl {
   private vectorStore: MemoryVectorStore | null = null;
   private chatHistory: (HumanMessage | AIMessage)[] = [];
-  private chain: ConversationalRetrievalQAChain | null = null;
+  private retrievalChain: any = null;
   
   /**
    * Initializes the service with a parsed PDF
@@ -130,19 +128,46 @@ class PDFChatServiceImpl {
         openAIApiKey: OPENAI_API_KEY,
       });
       
-      // Create the chain
-      const qaChain = loadQARefineChain(model);
+      // Get a retriever from the vector store
+      const retriever = this.vectorStore.asRetriever();
       
-      // Initialize the conversational retrieval chain
-      this.chain = ConversationalRetrievalQAChain.fromLLM(
-        model,
-        this.vectorStore.asRetriever(),
-        {
-          returnSourceDocuments: true,
-          qaChain,
-          outputParser: new StringOutputParser(),
+      // Create a simple chain that answers questions
+      const prompt = ChatPromptTemplate.fromTemplate(`
+        You are a helpful assistant that answers questions about documents.
+        
+        Context information from documents:
+        {context}
+        
+        Question: {question}
+        
+        Please provide a helpful, concise answer based ONLY on the provided context. 
+        Explain in a way that a {level} would understand.
+      `);
+      
+      // Set up a simple chain for document QA
+      this.retrievalChain = {
+        async invoke({ question, level = "High Schooler" }) {
+          // Get documents from retriever
+          const docs = await retriever.getRelevantDocuments(question);
+          
+          // Format context from documents
+          const context = docs.map(doc => doc.pageContent).join("\n\n");
+          
+          // Call the model with our prompt
+          const result = await model.invoke(
+            await prompt.formatMessages({
+              context,
+              question,
+              level
+            })
+          );
+          
+          return {
+            answer: result.content,
+            sourceDocuments: docs
+          };
         }
-      );
+      };
       
       // Clear chat history
       this.chatHistory = [];
@@ -163,7 +188,7 @@ class PDFChatServiceImpl {
     question: string,
     level: string = "High Schooler"
   ): Promise<{ answer: string; sourceDocuments?: any[] }> {
-    if (!this.vectorStore || !this.chain) {
+    if (!this.vectorStore || !this.retrievalChain) {
       throw new Error('PDF Chat Service not initialized. Call initialize() first.');
     }
     
@@ -171,19 +196,16 @@ class PDFChatServiceImpl {
       // Add the human message to the chat history
       this.chatHistory.push(new HumanMessage(question));
       
-      // Create a custom question with the explanation level
-      const formattedQuestion = `${question} (Please explain in a way that a ${level} would understand)`;
-      
       // Get the answer using the chain
-      const response = await this.chain.call({
-        question: formattedQuestion,
-        chat_history: this.chatHistory,
+      const response = await this.retrievalChain.invoke({
+        question,
+        level
       });
       
       // Extract the answer
-      const answer = response.text || 'I couldn\'t find an answer to that question in the document.';
+      const answer = response.answer || 'I couldn\'t find an answer to that question in the document.';
       
-      // Extract source documents
+      // Extract source documents if available
       const sourceDocuments = response.sourceDocuments || [];
       
       // Add the AI message to the chat history
@@ -219,7 +241,7 @@ class PDFChatServiceImpl {
    * Checks if the service is initialized
    */
   isInitialized(): boolean {
-    return this.vectorStore !== null && this.chain !== null;
+    return this.vectorStore !== null && this.retrievalChain !== null;
   }
 }
 
