@@ -81,16 +81,18 @@ export default function ChatPage() {
     }
     
     try {
-      return await chatService.askQuestion(message, level);
+      const response = await chatService.askQuestion(message, level);
+      return response;
     } catch (error: any) {
       console.error('Error processing message:', error);
       throw new Error(error.message || 'Failed to process your message');
     }
   };
   
-  // Handle reference click to highlight text in the PDF
-  const handleReferenceClick = (sourceDoc: SourceDocument, index: number) => {
-    console.log(`Reference ${index} clicked:`, sourceDoc);
+  // Utility function to highlight text from a source document in the PDF
+  // Kept for potential future use but not currently called from anywhere
+  const highlightSourceDocument = (sourceDoc: SourceDocument, index: number) => {
+    console.log(`Highlighting source document ${index}:`, sourceDoc);
     
     if (sourceDoc.metadata?.pageNumber && sourceDoc.pageContent) {
       // First clear any previous highlight by setting to null
@@ -255,7 +257,6 @@ export default function ChatPage() {
               ref={chatInterfaceRef}
               onSendMessage={handleSendMessage}
               isReady={!!chatService && !isInitializing}
-              onReferenceClick={handleReferenceClick}
               selectedLevel={explanationLevel}
               onLevelChange={setExplanationLevel}
             />

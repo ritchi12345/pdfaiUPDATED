@@ -5,12 +5,21 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import 'react-pdf/dist/esm/Page/TextLayer.css';
 import SelectionPopup from './SelectionPopup';
+import {
+  ChevronDownIcon,
+  MagnifyingGlassMinusIcon,
+  MagnifyingGlassPlusIcon,
+  ArrowsPointingOutIcon,
+  ComputerDesktopIcon
+} from '@heroicons/react/24/outline';
 
 // Configure pdfjs worker with fallback options
 if (typeof window !== 'undefined') {
   // Try to use our local worker first
   pdfjs.GlobalWorkerOptions.workerSrc = '/pdf-worker/pdf.worker.min.mjs';
 }
+
+type ZoomMode = 'percentage' | 'fitPage' | 'fitWidth' | 'actualSize' | 'automatic';
 
 interface PDFViewerProps {
   fileUrl: string;
@@ -30,6 +39,8 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
   const [numPages, setNumPages] = useState<number | null>(null);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [scale, setScale] = useState<number>(0.7);
+  const [zoomMode, setZoomMode] = useState<ZoomMode>('automatic');
+  const [isZoomDropdownOpen, setIsZoomDropdownOpen] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
@@ -38,7 +49,9 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
   const [selectedText, setSelectedText] = useState<string>("");
   const [popupPosition, setPopupPosition] = useState<{ top: number; left: number } | null>(null);
   const [isPopupVisible, setIsPopupVisible] = useState<boolean>(false);
+  const [pageDimensions, setPageDimensions] = useState<{width: number, height: number} | null>(null);
   const pdfContainerRef = useRef<HTMLDivElement>(null);
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
 
   // Handle window resize
   useEffect(() => {
@@ -266,12 +279,61 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
     return Math.min((windowWidth / 2) - 40, 800);
   };
 
+  // Function to calculate scale for different modes
+  const calculateScale = (mode: ZoomMode, containerWidth?: number, containerHeight?: number, pdfPage?: { width: number; height: number }) => {
+    if (!pdfPage || !viewerContainerRef.current) return scale; // Keep current scale if info is missing
+
+    const _containerWidth = containerWidth || viewerContainerRef.current.clientWidth - 20; // Deduct some padding
+    const _containerHeight = containerHeight || viewerContainerRef.current.clientHeight - 20; // Deduct some padding
+
+    switch (mode) {
+      case 'fitPage':
+        // Fit entire page within the container
+        return Math.min(_containerWidth / pdfPage.width, _containerHeight / pdfPage.height);
+      case 'fitWidth':
+        // Fit page width within the container
+        return _containerWidth / pdfPage.width;
+      case 'actualSize':
+        return 1.0;
+      case 'automatic':
+        // Default to fitWidth or a sensible default like 1.0 if dimensions are odd
+        return _containerWidth > 0 && pdfPage.width > 0 ? _containerWidth / pdfPage.width : 1.0;
+      case 'percentage':
+      default:
+        return scale; // Use the manually set scale
+    }
+  };
+
+  // Effect to adjust scale when zoomMode changes or container resizes
+  useEffect(() => {
+    if (pageDimensions && zoomMode !== 'percentage' && viewerContainerRef.current) {
+      const newScale = calculateScale(zoomMode, viewerContainerRef.current.clientWidth, viewerContainerRef.current.clientHeight, pageDimensions);
+      setScale(newScale);
+    }
+  }, [pageDimensions, zoomMode, windowWidth]);
+
   function onDocumentLoadSuccess({ numPages }: { numPages: number }) {
     setNumPages(numPages);
     setPageNumber(1);
     setLoading(false);
     setError(null);
+    // After document loads, if in a 'fit' mode, scale will be adjusted when page dimensions become available
   }
+  
+  // Handle page load success to get page dimensions for scaling calculations
+  const handlePageLoadSuccess = (page: any) => {
+    // page proxy object from react-pdf, contains originalWidth, originalHeight
+    if (page.originalWidth && page.originalHeight) {
+      setPageDimensions({ width: page.originalWidth, height: page.originalHeight });
+    }
+    
+    // Existing highlight logic
+    if (currentHighlight && currentHighlight.pageNumber === page._pageIndex + 1) {
+      setTimeout(() => {
+        highlightTextInDocument(currentHighlight.text, currentHighlight.pageNumber);
+      }, 200);
+    }
+  };
 
   function onDocumentLoadError(error: Error) {
     console.error('Error loading PDF:', error);
@@ -284,11 +346,28 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
   // We no longer need the changePage function for continuous scrolling
 
   function zoomIn() {
-    setScale(prevScale => Math.min(prevScale + 0.2, 2.5));
+    setZoomMode('percentage'); // Switch to percentage mode on manual zoom
+    setScale(prevScale => Math.min(prevScale + 0.1, 3.0)); // Max 300%
   }
 
   function zoomOut() {
-    setScale(prevScale => Math.max(prevScale - 0.2, 0.5));
+    setZoomMode('percentage'); // Switch to percentage mode on manual zoom
+    setScale(prevScale => Math.max(prevScale - 0.1, 0.25)); // Min 25%
+  }
+  
+  function setSpecificZoom(newScale: number) {
+    setZoomMode('percentage');
+    setScale(Math.max(0.25, Math.min(newScale, 3.0)));
+    setIsZoomDropdownOpen(false);
+  }
+
+  function handleZoomModeChange(mode: ZoomMode) {
+    setZoomMode(mode);
+    if (mode !== 'percentage' && pageDimensions && viewerContainerRef.current) {
+      const newScale = calculateScale(mode, viewerContainerRef.current.clientWidth, viewerContainerRef.current.clientHeight, pageDimensions);
+      setScale(newScale);
+    }
+    setIsZoomDropdownOpen(false);
   }
   
   // Handle text selection
@@ -377,8 +456,124 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
 
   return (
     <div className="flex flex-col h-full bg-gray-100 dark:bg-gray-900" ref={combinedRef}>
+      {/* Controls - Enhanced Zoom - Moved to the top */}
+      {numPages && !error && (
+        <div className="p-2 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
+          {/* Page Navigation */}
+          {numPages && (
+            <div className="flex items-center space-x-1 text-sm text-gray-700 dark:text-gray-300">
+              <span>Page</span>
+              <input
+                type="number"
+                value={pageNumber}
+                onChange={(e) => {
+                  const targetPage = parseInt(e.target.value, 10);
+                  if (targetPage >= 1 && targetPage <= numPages) {
+                    // Assuming continuous scroll, need to scroll to that page
+                    const pageElement = document.getElementById(`pdf-page-${targetPage}`);
+                    pageElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    setPageNumber(targetPage);
+                  }
+                }}
+                className="w-12 text-center border border-gray-300 dark:border-gray-600 rounded-md px-1 py-0.5 bg-white dark:bg-gray-800"
+                min="1"
+                max={numPages}
+              />
+              <span>of {numPages}</span>
+            </div>
+          )}
+
+          {/* Zoom Controls */}
+          <div className="flex items-center space-x-2">
+            {/* Zoom Out Button */}
+            <button
+              onClick={zoomOut}
+              disabled={scale <= 0.25 && zoomMode === 'percentage'}
+              className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+              aria-label="Zoom out"
+            >
+              <MagnifyingGlassMinusIcon className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+            </button>
+
+            {/* Zoom Level Dropdown/Display */}
+            <div className="relative">
+              <button
+                onClick={() => setIsZoomDropdownOpen(!isZoomDropdownOpen)}
+                className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center min-w-[120px] justify-center"
+                aria-label="Zoom options"
+              >
+                {zoomMode === 'percentage' ? `${Math.round(scale * 100)}%` : 
+                  zoomMode === 'fitPage' ? 'Fit Page' :
+                  zoomMode === 'fitWidth' ? 'Fit Width' :
+                  zoomMode === 'actualSize' ? 'Actual Size' :
+                  'Automatic'}
+                <ChevronDownIcon className="h-4 w-4 ml-2" />
+              </button>
+              
+              {isZoomDropdownOpen && (
+                <div className="absolute top-full mt-2 w-40 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-lg z-20">
+                  {[
+                    { label: 'Automatic', mode: 'automatic' as ZoomMode },
+                    { label: 'Actual Size', mode: 'actualSize' as ZoomMode },
+                    { label: 'Fit Page', mode: 'fitPage' as ZoomMode },
+                    { label: 'Fit Width', mode: 'fitWidth' as ZoomMode },
+                    { label: '50%', scale: 0.5 },
+                    { label: '75%', scale: 0.75 },
+                    { label: '100%', scale: 1.0 },
+                    { label: '125%', scale: 1.25 },
+                    { label: '150%', scale: 1.5 },
+                    { label: '200%', scale: 2.0 },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      onClick={() => 'mode' in item ? handleZoomModeChange(item.mode) : setSpecificZoom(item.scale!)}
+                      className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-600"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                  
+                  {/* Custom zoom input */}
+                  <div className="p-2 border-t border-gray-200 dark:border-gray-600">
+                    <input
+                      type="number"
+                      value={zoomMode === 'percentage' ? Math.round(scale * 100) : ""}
+                      onChange={(e) => {
+                        const newPercentage = parseInt(e.target.value);
+                        if (!isNaN(newPercentage)) {
+                          setSpecificZoom(newPercentage / 100);
+                        }
+                      }}
+                      onBlur={(e) => {
+                        const newPercentage = parseInt(e.target.value);
+                        if (!isNaN(newPercentage)) {
+                          setSpecificZoom(newPercentage / 100);
+                        }
+                      }}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-500 rounded-md bg-white dark:bg-gray-800 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="e.g. 85"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Zoom In Button */}
+            <button
+              onClick={zoomIn}
+              disabled={scale >= 3.0 && zoomMode === 'percentage'}
+              className="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+              aria-label="Zoom in"
+            >
+              <MagnifyingGlassPlusIcon className="h-5 w-5 text-gray-700 dark:text-gray-300" />
+            </button>
+          </div>
+        </div>
+      )}
+      
       {/* PDF Container */}
-      <div className="flex-1 overflow-auto flex justify-center p-2 pdf-container">
+      <div className="flex-1 overflow-auto flex justify-center p-2 pdf-container" ref={viewerContainerRef}>
         {loading && (
           <div className="flex items-center justify-center h-full w-full">
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500"></div>
@@ -444,12 +639,12 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
               <Page
                 key={`page_${index + 1}`}
                 pageNumber={index + 1}
-                width={getPageWidth()}
                 scale={scale}
                 renderTextLayer={true}
                 renderAnnotationLayer={true}
                 className="pdf-page"
                 data-page-number={index + 1}
+                onLoadSuccess={handlePageLoadSuccess}
                 onRenderSuccess={() => {
                   if (currentHighlight && currentHighlight.pageNumber === (index + 1)) {
                     // Apply highlighting after the page is rendered with a small delay
@@ -477,38 +672,6 @@ const PDFViewerComponent = forwardRef<HTMLDivElement, PDFViewerProps>(({
           />
         )}
       </div>
-      
-      {/* Controls - Only Zoom */}
-      {numPages && !error && (
-        <div className="p-3 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-end items-center">
-          {/* Zoom Controls */}
-          <div className="flex items-center space-x-2">
-            <button
-              onClick={zoomOut}
-              disabled={scale <= 0.5}
-              className="p-1 rounded-md bg-gray-200 dark:bg-gray-700 disabled:opacity-50"
-              aria-label="Zoom out"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
-              </svg>
-            </button>
-            <span className="text-sm">
-              {Math.round(scale * 100)}%
-            </span>
-            <button
-              onClick={zoomIn}
-              disabled={scale >= 2.5}
-              className="p-1 rounded-md bg-gray-200 dark:bg-gray-700 disabled:opacity-50"
-              aria-label="Zoom in"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 });

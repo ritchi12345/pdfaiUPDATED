@@ -18,7 +18,6 @@ interface ChatInterfaceProps {
   onSendMessage: (message: string, level: ExplanationLevel) => Promise<ChatResponse>;
   isReady: boolean;
   initialMessages?: Message[];
-  onReferenceClick?: (sourceDoc: SourceDocument, index: number) => void;
   selectedLevel?: ExplanationLevel;
   onLevelChange?: (level: ExplanationLevel) => void;
   ref?: React.ForwardedRef<{
@@ -36,7 +35,6 @@ const ChatInterface = forwardRef<ChatInterfaceRef, ChatInterfaceProps>(({
   onSendMessage, 
   isReady, 
   initialMessages = [],
-  onReferenceClick,
   selectedLevel: propSelectedLevel,
   onLevelChange
 }, ref) => {
@@ -156,34 +154,6 @@ const ChatInterface = forwardRef<ChatInterfaceRef, ChatInterfaceProps>(({
                 transition={{ delay: 0.1 }}
               >
                 <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                
-                {/* Show source references for assistant messages */}
-                {message.role === 'assistant' && message.sourceDocuments && message.sourceDocuments.length > 0 && (
-                  <motion.div 
-                    className="mt-2 pt-2 border-t border-gray-300 dark:border-gray-700"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                  >
-                    <p className="text-xs font-semibold mb-1">References:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {message.sourceDocuments.map((doc, idx) => (
-                        <motion.button
-                          key={idx}
-                          onClick={() => onReferenceClick && onReferenceClick(doc, idx)}
-                          className="text-xs bg-gray-300 dark:bg-gray-700 px-2 py-1 rounded hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors"
-                          initial={{ opacity: 0, scale: 0.8 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: 0.3 + (idx * 0.1) }}
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          {doc.metadata?.pageNumber ? `Page ${doc.metadata.pageNumber}` : `Ref ${idx + 1}`}
-                        </motion.button>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
               </motion.div>
             </motion.div>
           ))}

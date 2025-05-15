@@ -2,44 +2,40 @@
   "name": "pdf_ai",
   "version": "0.1.0",
   "private": true,
-
   "scripts": {
-    "dev":    "next dev --turbopack",
-    "build":  "next build",
-    "start":  "next start",
-    "lint":   "next lint"
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
-
   "dependencies": {
-    "langchain":            "0.0.207",
-    "@langchain/core":      "0.3.54",
-    "@langchain/openai":    "0.4.9",
+    "@heroicons/react": "^2.2.0",
     "@langchain/community": "0.3.42",
-
+    "@langchain/core": "0.3.54",
+    "@langchain/openai": "0.4.9",
     "@mendable/firecrawl-js": "1.4.4",
-
     "@supabase/supabase-js": "^2.49.4",
-    "framer-motion":         "^12.11.0",
-    "next":                  "15.3.2",
-    "pdf-parse":             "^1.1.1",
-    "pdfjs-dist":            "^4.2.67",
-    "react":                 "19.1.0",
-    "react-dom":             "19.1.0",
-    "react-dropzone":        "^14.2.3",
-    "react-pdf":             "^9.2.1",
-    "uuid":                  "^9.0.1"
+    "framer-motion": "^12.11.0",
+    "langchain": "0.0.207",
+    "next": "15.3.2",
+    "pdf-parse": "^1.1.1",
+    "pdfjs-dist": "^4.2.67",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-dropzone": "^14.2.3",
+    "react-pdf": "^9.2.1",
+    "uuid": "^9.0.1"
   },
-
   "devDependencies": {
-    "@eslint/eslintrc":      "^3.0.0",
-    "@tailwindcss/postcss":  "^4.0.0",
-    "@types/node":           "^20.0.0",
-    "@types/react":          "^19.0.0",
-    "@types/react-dom":      "^19.0.0",
-    "@types/uuid":           "^9.0.8",
-    "eslint":                "^9.0.0",
-    "eslint-config-next":    "15.3.2",
-    "tailwindcss":           "^4.0.0",
-    "typescript":            "^5.0.0"
+    "@eslint/eslintrc": "^3.0.0",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/uuid": "^9.0.8",
+    "eslint": "^9.0.0",
+    "eslint-config-next": "15.3.2",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.0.0"
   }
 }
