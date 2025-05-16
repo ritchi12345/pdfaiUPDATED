@@ -3,11 +3,19 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --primary: #8b5cf6;
+  --primary-foreground: #ffffff;
+  --primary-light: #ddd6fe;
+  --primary-dark: #7c3aed;
+  --secondary: #f3f4f6;
+  --secondary-foreground: #111827;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -16,11 +24,33 @@
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+    --primary: #a78bfa;
+    --primary-foreground: #ffffff;
+    --primary-light: #7c3aed;
+    --primary-dark: #8b5cf6;
+    --secondary: #27272a;
+    --secondary-foreground: #f9fafb;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background-color: var(--primary-light);
+  color: var(--primary-dark);
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion) {
+  html {
+    scroll-behavior: auto;
+  }
 }
