@@ -2,9 +2,21 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { createServerSupabaseClient } from '@/app/lib/supabaseClient';
 import { parsePDF } from '@/app/services/pdfParser';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 export async function POST(request: NextRequest) {
   try {
+    // Create Supabase client with auth
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     const formData = await request.formData();
     const pdfFile = formData.get('file') as File;
     

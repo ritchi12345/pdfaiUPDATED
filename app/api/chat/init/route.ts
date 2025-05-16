@@ -3,6 +3,8 @@ import { createServerSupabaseClient } from '@/app/lib/supabaseClient';
 import { parsePDF } from '@/app/services/pdfParser';
 import { initializeChatSession } from '@/app/services/langchainService';
 import * as pdfParseLib from 'pdf-parse';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 interface InitRequest {
   fileId: string;
@@ -11,6 +13,16 @@ interface InitRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    // Create Supabase client with auth
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     const body = await request.json() as InitRequest;
     const { fileId, sessionId } = body;
 

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { askQuestionInSession } from '@/app/services/langchainService';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 interface AskRequest {
   message: string;
@@ -10,6 +12,16 @@ interface AskRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    // Create Supabase client with auth
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     const body = await request.json() as AskRequest;
     const { message, sessionId, level } = body;
     

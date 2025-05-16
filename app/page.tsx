@@ -8,13 +8,21 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import { v4 as uuidv4 } from 'uuid';
 import Image from 'next/image';
+import { useAuth } from './components/AuthProvider';
 
 export default function Home() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { session } = useAuth();
 
   const handleFileUpload = async (file: File) => {
+    // Check if user is authenticated
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+    
     setIsUploading(true);
     setError(null);
     
@@ -242,7 +250,12 @@ export default function Home() {
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-3xl font-bold mb-4">Ready to chat with your PDF?</h2>
           <p className="text-lg text-gray-600 dark:text-gray-300 mb-8">Upload your document and start getting insights immediately.</p>
-          <a href="#" className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-lg font-medium transition-colors inline-block">Get Started Free</a>
+          <a 
+            href={session ? "/upload" : "/login"} 
+            className="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-lg font-medium transition-colors inline-block"
+          >
+            Get Started Free
+          </a>
         </div>
       </section>
 

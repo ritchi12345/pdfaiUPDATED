@@ -1,14 +1,23 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import PDFUpload from '../components/PDFUpload';
 import { v4 as uuidv4 } from 'uuid';
+import { useAuth } from '../components/AuthProvider';
 
 export default function UploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { session, isLoading } = useAuth();
+
+  // Client-side auth check
+  useEffect(() => {
+    if (!isLoading && !session) {
+      router.push('/login');
+    }
+  }, [session, isLoading, router]);
 
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
@@ -43,6 +52,20 @@ export default function UploadPage() {
       setIsUploading(false);
     }
   };
+
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen justify-center items-center">
+        <div className="animate-pulse text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  // Only render the page content if authenticated
+  if (!session) {
+    return null; // Don't render anything while redirecting
+  }
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-white to-gray-50 dark:from-gray-950 dark:to-gray-900 font-[family-name:var(--font-geist-sans)]">

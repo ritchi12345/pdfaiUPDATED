@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parsePDF } from '@/app/services/pdfParser';
 import { initializeChatSession, askQuestionInSession, getChatHistory, clearChatSession } from '@/app/services/langchainService';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 // Define expected request body structure
 interface ChatRequest {
@@ -10,6 +12,16 @@ interface ChatRequest {
 
 export async function POST(request: NextRequest) {
   try {
+    // Create Supabase client with auth
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     const body = await request.json() as ChatRequest;
     
     // Validate request
@@ -46,6 +58,16 @@ export async function POST(request: NextRequest) {
 // API route for PDF upload and session initialization
 export async function PUT(request: NextRequest) {
   try {
+    // Create Supabase client with auth
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     const formData = await request.formData();
     const pdfFile = formData.get('file') as File;
     const sessionId = formData.get('sessionId') as string;
@@ -82,6 +104,16 @@ export async function PUT(request: NextRequest) {
 // API route for session cleanup
 export async function DELETE(request: NextRequest) {
   try {
+    // Create Supabase client with auth
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    
     const { searchParams } = new URL(request.url);
     const sessionId = searchParams.get('sessionId');
     
