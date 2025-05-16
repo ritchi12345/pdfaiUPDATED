@@ -3,6 +3,9 @@
 import Link from 'next/link';
 import Logo from './Logo';
 import { useState, useEffect } from 'react';
+import { useAuth } from './AuthProvider';
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { useRouter } from 'next/navigation';
 
 interface HeaderProps {
   transparent?: boolean;
@@ -11,6 +14,9 @@ interface HeaderProps {
 export default function Header({ transparent = false }: HeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { session } = useAuth();
+  const supabase = createClientComponentClient();
+  const router = useRouter();
   
   useEffect(() => {
     const handleScroll = () => {
@@ -20,6 +26,15 @@ export default function Header({ transparent = false }: HeaderProps) {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const handleSignOut = async () => {
+    try {
+      await supabase.auth.signOut();
+      router.push('/');
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
 
   return (
     <header className={`sticky top-0 z-50 w-full p-4 transition-colors duration-300 ${
@@ -46,9 +61,21 @@ export default function Header({ transparent = false }: HeaderProps) {
         </nav>
         
         <div className="flex items-center gap-4">
-          <Link href="/api/auth/login" className="hidden md:inline-block px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">
-            Get Started
-          </Link>
+          {session ? (
+            <div className="hidden md:flex items-center gap-4">
+              <span className="text-gray-700 dark:text-gray-300">{session.user?.email}</span>
+              <button 
+                onClick={handleSignOut}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
+              >
+                Logout
+              </button>
+            </div>
+          ) : (
+            <Link href="/login" className="hidden md:inline-block px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors">
+              Get Started
+            </Link>
+          )}
           
           {/* Mobile Menu Button */}
           <button 
@@ -110,13 +137,28 @@ export default function Header({ transparent = false }: HeaderProps) {
             >
               Use Cases
             </Link>
-            <Link 
-              href="/api/auth/login" 
-              className="bg-purple-600 hover:bg-purple-700 text-white rounded-lg py-2 px-4 text-center transition-colors"
-              onClick={() => setMobileMenuOpen(false)}
-            >
-              Get Started
-            </Link>
+            {session ? (
+              <div className="space-y-2">
+                <div className="text-gray-700 dark:text-gray-300 py-2">{session.user?.email}</div>
+                <button 
+                  onClick={() => {
+                    handleSignOut();
+                    setMobileMenuOpen(false);
+                  }}
+                  className="w-full bg-purple-600 hover:bg-purple-700 text-white rounded-lg py-2 px-4 text-center transition-colors"
+                >
+                  Logout
+                </button>
+              </div>
+            ) : (
+              <Link 
+                href="/login" 
+                className="bg-purple-600 hover:bg-purple-700 text-white rounded-lg py-2 px-4 text-center transition-colors"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Get Started
+              </Link>
+            )}
           </nav>
         </div>
       )}
