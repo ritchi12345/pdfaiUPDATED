@@ -1,14 +1,52 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import PDFUpload from '../components/PDFUpload';
+import PDFListItem from '../components/PDFListItem';
 import { v4 as uuidv4 } from 'uuid';
+
+interface PDFDocument {
+  id: string;
+  file_name: string;
+  file_id: string;
+  created_at: string;
+}
 
 export default function UploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pdfHistory, setPdfHistory] = useState<PDFDocument[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const router = useRouter();
+
+  // Fetch user's PDF documents on component mount
+  useEffect(() => {
+    const fetchUserPDFs = async () => {
+      setIsLoading(true);
+      setFetchError(null);
+      
+      try {
+        const response = await fetch('/api/pdfs');
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to fetch PDF documents');
+        }
+        
+        const data = await response.json();
+        setPdfHistory(data.documents || []);
+      } catch (err: any) {
+        console.error('Error fetching PDF documents:', err);
+        setFetchError(err.message || 'Failed to load your PDF documents. Please try again later.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchUserPDFs();
+  }, []);
 
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
@@ -43,6 +81,27 @@ export default function UploadPage() {
       setIsUploading(false);
     }
   };
+
+  const handleDeletePDF = async (id: string) => {
+    try {
+      const response = await fetch(`/api/pdfs?id=${id}`, {
+        method: 'DELETE',
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete PDF');
+      }
+      
+      // Update local state to remove the deleted PDF
+      setPdfHistory(pdfHistory.filter(doc => doc.id !== id));
+    } catch (err: any) {
+      console.error('Error deleting PDF:', err);
+      throw err;
+    }
+  };
+
+  const hasReachedLimit = pdfHistory.length >= 5;
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-white to-gray-50 dark:from-gray-950 dark:to-gray-900 font-[family-name:var(--font-geist-sans)]">
@@ -93,7 +152,7 @@ export default function UploadPage() {
                 strokeLinejoin="round"
               />
             </svg>
-            <h1 className="text-xl font-bold">Upload PDF</h1>
+            <h1 className="text-xl font-bold">Your PDF Dashboard</h1>
           </div>
           
           <a
@@ -119,21 +178,72 @@ export default function UploadPage() {
       </header>
 
       <main className="flex-1 px-4 py-8 max-w-3xl mx-auto w-full">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-          <h2 className="text-xl font-semibold mb-4 text-center">Upload Your PDF</h2>
+        {!hasReachedLimit ? (
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <h2 className="text-xl font-semibold mb-4 text-center">Upload a New PDF</h2>
+            
+            <PDFUpload onFileUpload={handleFileUpload} />
+            
+            {isUploading && (
+              <div className="mt-4 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                <p className="ml-2 text-sm text-gray-600 dark:text-gray-400">Uploading PDF...</p>
+              </div>
+            )}
+            
+            {error && (
+              <div className="mt-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 rounded-md text-sm">
+                {error}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="bg-amber-50 dark:bg-amber-900/30 p-6 rounded-lg shadow-sm border border-amber-200 dark:border-amber-800 mb-6">
+            <h2 className="text-lg font-medium text-amber-800 dark:text-amber-400 flex items-center gap-2">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M12 8V12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M12 16H12.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              PDF Limit Reached
+            </h2>
+            <p className="mt-2 text-amber-700 dark:text-amber-300 text-sm">
+              You have reached the maximum limit of 5 PDFs. Please delete some PDFs below before uploading a new one.
+            </p>
+          </div>
+        )}
+        
+        <div className="mt-8 space-y-2">
+          <h2 className="text-xl font-semibold mb-4">Your PDF Documents</h2>
           
-          <PDFUpload onFileUpload={handleFileUpload} />
-          
-          {isUploading && (
-            <div className="mt-4 flex items-center justify-center">
+          {isLoading ? (
+            <div className="p-8 flex justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-              <p className="ml-2 text-sm text-gray-600 dark:text-gray-400">Uploading PDF...</p>
+              <p className="ml-2 text-sm text-gray-600 dark:text-gray-400">Loading your PDFs...</p>
             </div>
-          )}
-          
-          {error && (
-            <div className="mt-4 p-3 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 rounded-md text-sm">
-              {error}
+          ) : fetchError ? (
+            <div className="p-6 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 rounded-md">
+              <p>{fetchError}</p>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="mt-2 text-sm font-medium text-red-600 dark:text-red-400 hover:underline"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : pdfHistory.length === 0 ? (
+            <div className="p-6 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 rounded-md text-center">
+              <p>You have not uploaded any PDFs yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {pdfHistory.map((doc) => (
+                <PDFListItem 
+                  key={doc.id} 
+                  document={doc}
+                  onDelete={handleDeletePDF}
+                />
+              ))}
             </div>
           )}
         </div>
