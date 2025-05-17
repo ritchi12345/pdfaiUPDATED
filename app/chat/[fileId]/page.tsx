@@ -8,11 +8,13 @@ import { supabase } from '@/app/lib/supabaseClient';
 import { usePDFChat } from '@/app/hooks/usePDFChat';
 import { SourceDocument, ChatResponse } from '@/app/models/types';
 import { ExplanationLevel, EXPLANATION_LEVELS } from '@/app/components/ChatInterface';
+import { useAuth } from '@/app/components/AuthProvider';
 
 export default function ChatPage() {
   const params = useParams();
   const router = useRouter();
   const fileId = params.fileId ? decodeURIComponent(params.fileId as string) : null;
+  const { session, isLoading: authLoading } = useAuth();
   
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -22,6 +24,13 @@ export default function ChatPage() {
   const [explanationLevel, setExplanationLevel] = useState<ExplanationLevel>("High Schooler");
   const pdfViewerRef = useRef<any>(null);
   const chatInterfaceRef = useRef<{ sendMessage: (message: string) => Promise<void> }>(null);
+  
+  // Client-side auth check
+  useEffect(() => {
+    if (!authLoading && !session) {
+      router.push('/login');
+    }
+  }, [session, authLoading, router]);
   
   // Get the chat service from the hook
   const { 
@@ -33,6 +42,9 @@ export default function ChatPage() {
 
   // Fetch PDF URL and initialize chat when the component mounts
   useEffect(() => {
+    // Don't fetch if not authenticated
+    if (!session) return;
+    
     async function initializeChat() {
       console.log("Chat page received fileId:", fileId);
 
@@ -72,7 +84,21 @@ export default function ChatPage() {
     }
 
     initializeChat();
-  }, [fileId, router, initializeChatForPdf]);
+  }, [fileId, router, initializeChatForPdf, session]);
+
+  // Show loading state while checking authentication
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-pulse text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render anything if not authenticated (will redirect)
+  if (!session) {
+    return null;
+  }
 
   // Handle sending a message
   const handleSendMessage = async (message: string, level: ExplanationLevel): Promise<ChatResponse> => {
@@ -102,7 +128,7 @@ export default function ChatPage() {
       setTimeout(() => {
         setActiveHighlight({
           text: sourceDoc.pageContent,
-          pageNumber: sourceDoc.metadata.pageNumber
+          pageNumber: sourceDoc.metadata.pageNumber as number
         });
       }, 50);
     }

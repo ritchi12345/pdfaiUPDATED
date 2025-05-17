@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { createServerSupabaseClient } from '@/app/lib/supabaseClient';
 import { parsePDF } from '@/app/services/pdfParser';
+<<<<<<< HEAD
 import { cookies } from 'next/headers';
 import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 
@@ -39,6 +40,21 @@ export async function POST(request: NextRequest) {
         { error: 'Maximum of 5 PDFs allowed. Please delete one to upload a new one.' },
         { status: 400 }
       );
+=======
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
+
+export async function POST(request: NextRequest) {
+  try {
+    // Create Supabase client with auth
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Check if user is authenticated
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+>>>>>>> fda7b1acfca1ab44972ff427a428f7cc66921f53
     }
     
     const formData = await request.formData();

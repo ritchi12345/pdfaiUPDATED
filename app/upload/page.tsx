@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import PDFUpload from '../components/PDFUpload';
 import PDFListItem from '../components/PDFListItem';
 import { v4 as uuidv4 } from 'uuid';
+import { useAuth } from '../components/AuthProvider';
 
 interface PDFDocument {
   id: string;
@@ -20,6 +21,14 @@ export default function UploadPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const router = useRouter();
+  const { session, isLoading } = useAuth();
+
+  // Client-side auth check
+  useEffect(() => {
+    if (!isLoading && !session) {
+      router.push('/login');
+    }
+  }, [session, isLoading, router]);
 
   // Fetch user's PDF documents on component mount
   useEffect(() => {
@@ -82,6 +91,7 @@ export default function UploadPage() {
     }
   };
 
+<<<<<<< HEAD
   const handleDeletePDF = async (id: string) => {
     try {
       const response = await fetch(`/api/pdfs?id=${id}`, {
@@ -102,6 +112,21 @@ export default function UploadPage() {
   };
 
   const hasReachedLimit = pdfHistory.length >= 5;
+=======
+  // Show loading state while checking authentication
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen justify-center items-center">
+        <div className="animate-pulse text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  // Only render the page content if authenticated
+  if (!session) {
+    return null; // Don't render anything while redirecting
+  }
+>>>>>>> fda7b1acfca1ab44972ff427a428f7cc66921f53
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-white to-gray-50 dark:from-gray-950 dark:to-gray-900 font-[family-name:var(--font-geist-sans)]">
