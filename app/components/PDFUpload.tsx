@@ -6,15 +6,29 @@ import Image from 'next/image';
 
 interface PDFUploadProps {
   onFileUpload: (file: File) => void;
+  isAuthenticated?: boolean;
+  isAuthLoading?: boolean;
 }
 
-export default function PDFUpload({ onFileUpload }: PDFUploadProps) {
+export default function PDFUpload({ onFileUpload, isAuthenticated = true, isAuthLoading = false }: PDFUploadProps) {
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string>('');
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     // Reset any previous errors
     setError('');
+    
+    // If authentication is loading or user is not authenticated, don't proceed
+    if (isAuthLoading) {
+      setError('Checking authentication status...');
+      return;
+    }
+    
+    if (!isAuthenticated) {
+      // Call onFileUpload with null to trigger the login redirect
+      onFileUpload(null as any);
+      return;
+    }
     
     const selectedFile = acceptedFiles[0];
     
@@ -32,21 +46,24 @@ export default function PDFUpload({ onFileUpload }: PDFUploadProps) {
 
     setFile(selectedFile);
     onFileUpload(selectedFile);
-  }, [onFileUpload]);
+  }, [onFileUpload, isAuthenticated, isAuthLoading]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
       'application/pdf': ['.pdf']
     },
-    maxFiles: 1
+    maxFiles: 1,
+    disabled: isAuthLoading // Only disable when auth is loading
   });
 
   return (
     <div className="w-full max-w-md mx-auto my-8">
       <div 
         {...getRootProps()} 
-        className={`p-6 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
+        className={`p-6 border-2 border-dashed rounded-lg ${
+          isAuthLoading ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'
+        } transition-colors ${
           isDragActive 
             ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' 
             : 'border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600'
@@ -99,9 +116,15 @@ export default function PDFUpload({ onFileUpload }: PDFUploadProps) {
             ) : (
               <>
                 <p className="text-sm text-gray-700 dark:text-gray-300 font-medium">
-                  {isDragActive ? 'Drop your PDF here' : 'Drag & drop your PDF here'}
+                  {!isAuthenticated ? 'Click here to log in and upload files' : 
+                   isAuthLoading ? 'Checking authentication...' :
+                   isDragActive ? 'Drop your PDF here' : 'Drag & drop your PDF here'}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">or click to browse files</p>
+                {(isAuthenticated && !isAuthLoading) || (!isAuthenticated && !isAuthLoading) ? (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {isAuthenticated ? 'or click to browse files' : 'you need to be logged in to upload'}
+                  </p>
+                ) : null}
               </>
             )}
           </div>

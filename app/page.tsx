@@ -8,13 +8,28 @@ import Header from './components/Header';
 import Footer from './components/Footer';
 import { v4 as uuidv4 } from 'uuid';
 import Image from 'next/image';
+import { useAuth } from './components/AuthProvider';
 
 export default function Home() {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { session, isLoading } = useAuth();
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileUpload = async (file: File | null) => {
+    // Check authentication status
+    if (isLoading) {
+      // Auth is still loading, don't proceed yet
+      setError("Checking authentication status...");
+      return;
+    }
+    
+    // Redirect unauthenticated users to login
+    if (!session || !file) {
+      router.push('/login?redirect=/');
+      return;
+    }
+    
     setIsUploading(true);
     setError(null);
     
@@ -64,7 +79,11 @@ export default function Home() {
             <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
               <h3 className="text-xl font-semibold mb-4">Upload your PDF</h3>
               
-              <PDFUpload onFileUpload={handleFileUpload} />
+              <PDFUpload 
+                onFileUpload={handleFileUpload} 
+                isAuthenticated={!!session} 
+                isAuthLoading={isLoading} 
+              />
               
               {isUploading && (
                 <div className="mt-4 flex items-center justify-center">
