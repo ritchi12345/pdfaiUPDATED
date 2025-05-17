@@ -2,9 +2,45 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import { createServerSupabaseClient } from '@/app/lib/supabaseClient';
 import { parsePDF } from '@/app/services/pdfParser';
+import { cookies } from 'next/headers';
+import { createRouteHandlerClient } from '@supabase/auth-helpers-nextjs';
 
 export async function POST(request: NextRequest) {
   try {
+    // Create a Supabase client with cookie-based auth
+    const supabase = createRouteHandlerClient({ cookies });
+    
+    // Get the current authenticated user
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      return NextResponse.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    
+    // Check if the user already has 5 PDF documents
+    const { data: existingPdfs, error: countError } = await supabase
+      .from('pdf_documents')
+      .select('id')
+      .eq('user_id', user.id);
+      
+    if (countError) {
+      console.error('Error checking PDF count:', countError);
+      return NextResponse.json(
+        { error: 'Failed to check document limit' },
+        { status: 500 }
+      );
+    }
+    
+    if (existingPdfs && existingPdfs.length >= 5) {
+      return NextResponse.json(
+        { error: 'Maximum of 5 PDFs allowed. Please delete one to upload a new one.' },
+        { status: 400 }
+      );
+    }
+    
     const formData = await request.formData();
     const pdfFile = formData.get('file') as File;
     
@@ -44,6 +80,28 @@ export async function POST(request: NextRequest) {
     
     // Parse the PDF to get metadata (for later use in initializing chat)
     const parsedPdf = await parsePDF(pdfFile);
+    
+    // Insert record into pdf_documents table
+    const { error: insertError } = await supabaseAdmin
+      .from('pdf_documents')
+      .insert({
+        user_id: user.id,
+        file_id: fileName,
+        file_name: pdfFile.name,
+        storage_path: data.path,
+        title: parsedPdf.metadata.title || 'Untitled Document',
+        page_count: parsedPdf.metadata.pageCount
+      });
+      
+    if (insertError) {
+      console.error('Error inserting PDF record:', insertError);
+      // Try to clean up the uploaded file if database insertion fails
+      await supabaseAdmin.storage.from('pdfs').remove([fileName]);
+      return NextResponse.json(
+        { error: 'Failed to save PDF metadata' },
+        { status: 500 }
+      );
+    }
     
     return NextResponse.json({
       success: true,
